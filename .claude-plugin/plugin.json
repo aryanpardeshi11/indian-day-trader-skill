@@ -1,0 +1,31 @@
+{
+  "name": "indian-day-trader-skill",
+  "description": "AI agent skill for Indian NSE/BSE intraday, swing, and F&O traders combining multi-timeframe technical intelligence with 10,000-path Monte Carlo Time Machine replays, April 2026 Indian tax math, hard risk circuit breakers, and gated paper/live staging across 9 Indian brokers.",
+  "version": "1.1.0",
+  "author": {
+    "name": "Aryan Pardeshi",
+    "url": "https://github.com/aryanpardeshi11"
+  },
+  "homepage": "https://github.com/aryanpardeshi11/indian-day-trader-skill",
+  "repository": "https://github.com/aryanpardeshi11/indian-day-trader-skill",
+  "license": "MIT",
+  "keywords": [
+    "nse",
+    "bse",
+    "indian-stock-market",
+    "day-trading",
+    "swing-trading",
+    "monte-carlo",
+    "paper-trading",
+    "zerodha",
+    "angel-one",
+    "upstox",
+    "dhan",
+    "fyers",
+    "groww",
+    "agent-skills",
+    "antigravity",
+    "claude-skills"
+  ],
+  "skills": "./.agents/skills"
+}

@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Secrets & local state
+.env
+*.db
+*.sqlite
+*.sqlite3
+.agents/skills/nse-bse-hybrid-trader/state/
+trader/
+
+# OS
+.DS_Store
+Thumbs.db
+

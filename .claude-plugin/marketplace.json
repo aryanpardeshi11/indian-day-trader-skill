@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "indian-day-trader-skill",
+  "description": "AI trading skill pack for Indian NSE & BSE equities, indices, and F&O with Monte Carlo Time Machine, April 2026 statutory tax math, and 9-broker paper/live gating.",
+  "owner": {
+    "name": "Aryan Pardeshi",
+    "url": "https://github.com/aryanpardeshi11"
+  },
+  "plugins": [
+    {
+      "name": "indian-day-trader-skill",
+      "description": "NSE/BSE Hybrid Trader skill: 3-screen MTF confluence, RSI divergence, Fibonacci pockets, 10,000-run Monte Carlo Time Machine (15:15 IST cutoff), exact 2026 Indian tax sizing, risk circuit breakers, and SQLite paper/live broker bridge across 9 Indian brokers.",
+      "source": "./",
+      "category": "productivity",
+      "homepage": "https://github.com/aryanpardeshi11/indian-day-trader-skill"
+    }
+  ]
+}

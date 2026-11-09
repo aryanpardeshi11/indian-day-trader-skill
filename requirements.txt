@@ -1,0 +1,12 @@
+# Core engine (nse_common, nse_data_loader, nse_timemachine, indian_risk_gate,
+# broker_bridge / smartapi_bridge --paper, and ScripMaster SQLite cache) uses Python 3.10+ stdlib only.
+# Live execution for all 9 Indian brokers also runs on stdlib urllib.request + HMAC-SHA1/SHA-256.
+#
+# Optional packages for live Angel One SmartAPI SDK transport / TOTP:
+# smartapi-python>=1.4.8
+# pyotp>=2.9.0
+# python-dotenv>=1.0.0
+# logzero>=1.7.0
+requests>=2.31.0
+pytest>=8.0.0
+

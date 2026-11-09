@@ -1,0 +1,71 @@
+[project]
+name = "indian-day-trader-skill"
+version = "1.1.0"
+description = "AI agent skill for Indian NSE/BSE traders combining multi-timeframe technical intelligence with deterministic INR risk sizing, 2026 Indian statutory tax math, 10,000-path Monte Carlo Time Machine, and gated paper/live execution across 9 Indian brokers."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".agents/skills/nse-bse-hybrid-trader/scripts"]
+
+[tool.pyrefly]
+project-includes = [
+  ".agents/skills/nse-bse-hybrid-trader/scripts/*.py",
+  "tests/*.py",
+]
+project-excludes = [
+  "**/__pycache__",
+  ".pytest_cache",
+  ".venv",
+  ".agents/skills/nse-bse-hybrid-trader/state",
+]
+disable-project-excludes-heuristics = true
+search-path = [".agents/skills/nse-bse-hybrid-trader/scripts"]
+python-version = "3.10"
+ignore-missing-imports = ["pyotp", "SmartApi"]
+
+[tool.pyright]
+include = [".agents/skills/nse-bse-hybrid-trader/scripts", "tests"]
+exclude = ["**/__pycache__", ".pytest_cache", ".venv", ".agents/skills/nse-bse-hybrid-trader/state"]
+extraPaths = [".agents/skills/nse-bse-hybrid-trader/scripts"]
+pythonVersion = "3.10"
+
+[tool.mypy]
+mypy_path = ".agents/skills/nse-bse-hybrid-trader/scripts"
+
+[tool.ruff]
+src = [".agents/skills/nse-bse-hybrid-trader/scripts", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "W",
+  "F",
+  "I",
+  "B",
+  "UP",
+  "RUF",
+  "PIE",
+  "SIM",
+  "FURB",
+  "BLE",
+  "DTZ",
+  "ARG",
+  "RET",
+  "PTH",
+  "PT",
+  "PLR5501",
+  "TRY300",
+  "TRY301",
+  "PLC0415",
+  "TC",
+  "S",
+]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+".agents/skills/nse-bse-hybrid-trader/scripts/*.py" = ["E402"]
+"tests/*.py" = ["S101", "S105"]
+
