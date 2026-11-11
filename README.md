@@ -305,7 +305,46 @@ Once installed in your AI IDE, talk naturally:
 
 ## CLI Quick Start & Worked Example
 
-### End-to-End Discovery, Gating & Alerts Pipeline
+### One-Command PowerShell Pipeline (`trade.ps1` on Windows)
+
+Run the full 6-step workflow (`Clock -> News -> Market Structure -> Time Machine -> Risk Gate -> Paper Staging & Alerts`)
+from the repository root with one command:
+
+```powershell
+# Allow local PowerShell scripts once (if blocked by Windows ExecutionPolicy)
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
+# 1. Quickest — market clock, news & technical scan for any stock
+.\trade.ps1 HDFCBANK
+
+# 2. Full pipeline with trade coordinates
+.\trade.ps1 BANKBARODA -Entry 275 -Stop 265 -Target 295
+
+# 3. Delivery trade with custom capital & broker
+.\trade.ps1 RELIANCE -Entry 1335 -Stop 1300 -Target 1420 -Segment EQ_DELIVERY -Capital 100000 -Broker zerodha
+
+# 4. Intraday mode
+.\trade.ps1 TCS -Entry 3800 -Stop 3760 -Target 3880 -Mode INTRADAY -Segment EQ_INTRADAY
+
+# 5. F&O Futures trade
+.\trade.ps1 NIFTY -Entry 24000 -Stop 23800 -Target 24400 -Segment FNO_FUT -Broker zerodha
+
+# 6. Skip news for a faster run, or launch live alert watch at the end
+.\trade.ps1 TATAMOTORS -Entry 820 -Stop 800 -Target 860 -SkipNews
+.\trade.ps1 BANKBARODA -WatchAlerts
+```
+
+| Step | What `trade.ps1` Runs | Toggle / Notes |
+| :--- | :--- | :--- |
+| **0** | NSE/BSE market clock & IST session phase | Always runs |
+| **1** | 72h ticker news, market headlines, SEBI/RBI/BSE RSS & F&O ban | `-SkipNews` to skip |
+| **2** | EMAs, VWAP, 15m ORB, RSI, MACD, ADX, ATR, Fib & 0-6 Confluence | Always runs |
+| **3** | 10,000-path Monte Carlo Time Machine (`SWING` or `INTRADAY`) | Runs with `-Entry -Stop -Target`; `-SkipTimeMachine` to skip |
+| **4** | INR sizing, 2026 statutory taxes & hard risk gate | Runs with `-Entry -Stop -Target`; `-SkipRiskGate` to skip |
+| **5** | Copy-pasteable `broker_bridge.py stage --paper` command | Printed when coordinates are given |
+| **6** | Live quote snapshot + optional price/IST bell watch | Add `-WatchAlerts` for continuous watch |
+
+### End-to-End Discovery, Gating & Alerts Pipeline (Cross-Platform Python)
 
 ```bash
 # 0. Optional discovery & news briefing (nifty50 / nifty200 / fno)
@@ -414,6 +453,7 @@ capital, inspect every file yourself:
 | [references/technical_frameworks.md](.agents/skills/nse-bse-hybrid-trader/references/technical_frameworks.md) | 3-screen MTF rules, trailing stop stages, and portfolio concentration guidelines |
 | [references/indian_market_rules.md](.agents/skills/nse-bse-hybrid-trader/references/indian_market_rules.md) | Session windows, regulatory notes, tax tables, and broker API reference |
 | [tests/test_hybrid_trader.py](tests/test_hybrid_trader.py) | Offline test fixtures, assertions, and mocked HTTP checks |
+| [trade.ps1](trade.ps1) | Windows PowerShell 6-step pipeline launcher wrapping all scripts above |
 | [.env.example](.env.example) | Broker environment variable names (copy to `.env` locally; never commit `.env`) |
 
 ---
@@ -476,7 +516,8 @@ capital, inspect every file yourself:
 ├── LICENSE                               # MIT License
 ├── pyproject.toml                        # Project metadata, pytest, ruff & type-checker config
 ├── README.md                             # Documentation, features, audit guide & disclaimers
-└── requirements.txt                      # Optional test/SDK packages (core uses stdlib only)
+├── requirements.txt                      # Optional test/SDK packages (core uses stdlib only)
+└── trade.ps1                             # Windows PowerShell all-in-one 6-step pipeline launcher
 ```
 
 ---
