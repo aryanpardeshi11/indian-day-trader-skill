@@ -33,10 +33,10 @@ decouples the two:
    orders into a local SQLite paper ledger (or explicitly confirmed live broker REST APIs).
 
 ```text
-nse_data_loader.py  -->  nse_timemachine.py  -->  indian_risk_gate.py  -->  broker_bridge.py
-(MTF + Confluence)      (10k Monte Carlo +       (INR Sizing + Taxes       (SQLite Paper Ledger
-                         15m ORB Backtest)        + Circuit Breakers        or Gated Live REST
-                                                  + SHA-256 Fingerprint)    across 9 Brokers)
+[nse_scanner.py] + [nse_news.py] --> nse_data_loader.py --> nse_timemachine.py --> indian_risk_gate.py --> broker_bridge.py --> [nse_alerts.py]
+(NSE Universe +    (Google News IN,   (MTF + Confluence    (10k Monte Carlo +    (INR Sizing + Taxes       (SQLite Paper      (IST Clock, SL/TP
+ Daily & ORB        ET/LiveMint/SEBI/  + --with-news)       15m ORB Backtest)     + Circuit Breakers        & Live REST         & 15:10 IST Flatten
+ Screener)          RBI/BSE/F&O Ban)                                              + SHA-256 Fingerprint)    across 9 Brokers)    Live Watch)
 ```
 
 ---
@@ -47,8 +47,12 @@ nse_data_loader.py  -->  nse_timemachine.py  -->  indian_risk_gate.py  -->  brok
 
 - **No Mandatory Third-Party Runtime Dependencies:** Technical loading, indicator math, 10,000-run Monte Carlo
   simulations, Indian tax math, RFC-6238 TOTP generation, SQLite scrip-master caching, SQLite paper-trade accounting,
-  and all 9 live broker REST dispatchers (`urllib.request` + HMAC-SHA1/SHA-256) run using only Python's standard
-  library.
+  all 9 live broker REST dispatchers (`urllib.request` + HMAC-SHA1/SHA-256), and the terminal UI renderer (`nse_ui.py`)
+  run using only Python's standard library.
+- **Beginner-Friendly Terminal Tables (`nse_ui.py`):** Running any script without `--json` renders colored Unicode
+  tables (with automatic ASCII & Windows VT100 fallback, plus `NO_COLOR`/`FORCE_COLOR` support), progress bars, Indian
+  lakh/crore INR formatting, status badges (`PASS`/`BLOCK`/`OPEN`/`CLOSED`), and plain-English callouts. Pass
+  `--json` anytime for raw structured JSON.
 - **Optional Packages (`requirements.txt`):** `pytest` for running the test suite, `requests`, and optional
   `smartapi-python` / `pyotp` if you prefer Angel One's official SDK transport over the built-in direct REST client.
 
@@ -81,9 +85,9 @@ nse_data_loader.py  -->  nse_timemachine.py  -->  indian_risk_gate.py  -->  brok
   - **0-6 Confluence Scorer & Candidate Setup:** Scores HTF alignment, intraday structure, RSI, MACD/ADX momentum,
     Fib/EMA200 support, and Volume/Delivery confirmation, then emits `Rs. 0.05` tick-aligned `entry`, `stop_loss`,
     `target_1` (`1.6R`), and `target_2` (`2.5R`).
-- **Regulatory & Surveillance Flags:** Supports `--fno-ban` (`>95% MWPL`), `--asm-gsm` (SEBI ASM/GSM), `--circuit-band`
-  (`2%`/`5%`/`10%`/`20%` proximity check within 1% or `>= 4.5%` PDC move warning), and `--delivery-pct` NSE delivery
-  confirmation.
+- **Regulatory & Surveillance Flags:** Supports `--with-news` (auto-reads Indian RSS news + live NSE `fo_secban.csv`),
+  `--fno-ban` (`>95% MWPL`), `--asm-gsm` (SEBI ASM/GSM), `--circuit-band` (`2%`/`5%`/`10%`/`20%` proximity check
+  within 1% or `>= 4.5%` PDC move warning), and `--delivery-pct` NSE delivery confirmation.
 
 ### 3. 10,000-Path Monte Carlo Time Machine & ORB Backtester (`nse_timemachine.py`)
 
@@ -170,7 +174,40 @@ nse_data_loader.py  -->  nse_timemachine.py  -->  indian_risk_gate.py  -->  brok
     `--confirm "CONFIRM LIVE"` is passed.
   - `smartapi_bridge.py` provides a backward-compatible facade defaulting to `angel_one`.
 
-### 6. Curated Indian Market Playbooks (`references/`)
+### 6. Indian Universe & 2-Stage NSE Scanner (`nse_scanner.py`)
+
+- **NiftyIndices & NSE Archives Universe (`universe`):** Downloads and caches `nifty50`, `niftynext50`, `niftybank`,
+  `nifty200`, `nifty500`, `fno` (from `fo_mktlots.csv`), or `all_eq` (from `EQUITY_L.csv`), enriching each symbol with
+  series (`EQ` vs Trade-to-Trade `BE`/`BZ`), front-month F&O lot size, and live NSE F&O ban status (`fo_secban.csv`).
+- **2-Stage Fast Screening (`daily` & `orb`):** Sweeps batches of 20 `.NS` tickers via Yahoo Finance `v8/finance/spark`,
+  then confirms volume, `RVOL`, `ATR(14)`, INR Crore turnover, and Anchored VWAP via parallel `v8/finance/chart` calls
+  with automatic exclusion of Trade-to-Trade `BE`/`BZ` scrips (`--include-t2t` overrides).
+- **Setups Supported:** Daily (`breakout_20d`, `bull_flag`, `reclaim_sma20`, `oversold`, `oversold_bounce`, `near_high`)
+  and Intraday (`15m` Opening Range Breakout + Anchored VWAP + missing-bar circuit check).
+
+### 7. Indian News, Earnings & Regulatory Feed Monitor (`nse_news.py`)
+
+- **Fast Free Indian Feeds:** Combines **Google News India RSS** (`hl=en-IN&gl=IN&ceid=IN:en`, with company-name query
+  expansion), **Economic Times Stocks RSS**, **LiveMint Markets RSS**, **SEBI RSS** (`sebirss.xml`), **RBI Press Releases
+  RSS**, **BSE Notices RSS**, live **NSE `fo_secban.csv`**, and a Yahoo v8 `>= 3%` move check. *(Yahoo Finance RSS
+  returns 0 items for `.NS` tickers and NSE/BSE JSON APIs block HTTP 403, so direct public XML/RSS and Archive CSV
+  feeds are used instead.)*
+- **Indian Catalyst Tagging & Stateful Dedupe:** Flags `earnings`, `order_win`, `analyst`, `deal_qip`, `capital_corp`,
+  `regulatory`, `legal_risk`, `management`, and `circuit_halt` leads, auto-discovers symbols from `state/watchlist.json`,
+  `state/risk_verdict.json`, and `OPEN` SQLite `paper_orders`, and suppresses already-seen items (`--all` shows all).
+
+### 8. IST Clock, Non-Bracket Alerts & Live Watcher (`nse_alerts.py`)
+
+- **IST Market Clock (`clock`):** Reports NSE/BSE phases (`PRE_OPEN`, `OPENING_RANGE`, `PRIMARY_EXECUTION`,
+  `HAZARD_WINDOW_NO_NEW_ENTRY`, `AUTO_SQUAREOFF_ZONE`, `POST_MARKET`), 2026 holidays, Muhurat sessions, and next open.
+- **SQLite Paper Ledger & Non-Bracket Protection (`add --from-ledger --ist-bell`):** Auto-registers direction-aware
+  `stop` and `target` alerts (handling both long and short trades) plus `15:10 IST` flatten warnings for all `OPEN` rows
+  in `paper_trades.db`, protecting orders on brokers where `attached_stoploss_trigger` / `attached_target_price` are
+  stripped on non-bracket live orders.
+- **Cron `check` & Split-Screen `watch`:** Use `check --beep` (`exit 0` on alert / `1` quiet) for scheduled automation,
+  or `watch --interval 30 --until 15:15` alongside Angel One / TradingView for continuous terminal monitoring.
+
+### 9. Curated Indian Market Playbooks (`references/`)
 
 - [`technical_frameworks.md`](.agents/skills/nse-bse-hybrid-trader/references/technical_frameworks.md): 3-screen MTF
   rules, 0-6 confluence rubric, volume vs NSE delivery % matrix, RSI divergence confirmation rules, Fibonacci Golden
@@ -268,11 +305,15 @@ Once installed in your AI IDE, talk naturally:
 
 ## CLI Quick Start & Worked Example
 
-### End-to-End 4-Command Pipeline
+### End-to-End Discovery, Gating & Alerts Pipeline
 
 ```bash
-# 1. Multi-timeframe technicals, VWAP, 15m ORB, Fibonacci, RSI divergence & 0-6 confluence
-python .agents/skills/nse-bse-hybrid-trader/scripts/nse_data_loader.py --symbol RELIANCE
+# 0. Optional discovery & news briefing (nifty50 / nifty200 / fno)
+python .agents/skills/nse-bse-hybrid-trader/scripts/nse_scanner.py daily --pool nifty50 --min-turnover-cr 20
+python .agents/skills/nse-bse-hybrid-trader/scripts/nse_news.py --tickers RELIANCE SBIN --all
+
+# 1. Multi-timeframe technicals, VWAP, 15m ORB, Fibonacci, RSI divergence, 0-6 confluence & news
+python .agents/skills/nse-bse-hybrid-trader/scripts/nse_data_loader.py --symbol RELIANCE --with-news
 
 # 2. 10,000-path Monte Carlo Time Machine + Historical 15m ORB Replay (15:15 IST cutoff)
 python .agents/skills/nse-bse-hybrid-trader/scripts/nse_timemachine.py \
@@ -285,10 +326,12 @@ python .agents/skills/nse-bse-hybrid-trader/scripts/indian_risk_gate.py \
   --entry 1324 --stop 1310 --target 1352 --segment EQ_INTRADAY \
   --timemachine-json .agents/skills/nse-bse-hybrid-trader/state/timemachine_result.json --write
 
-# 4. Stage paper trade in local SQLite ledger (default safe mode)
+# 4. Stage paper trade in local SQLite ledger (default safe mode) & sync IST alerts
 python .agents/skills/nse-bse-hybrid-trader/scripts/broker_bridge.py stage \
   --broker zerodha --symbol RELIANCE --entry 1324 --stop 1310 --target 1352 \
   --risk-json .agents/skills/nse-bse-hybrid-trader/state/risk_verdict.json --paper
+python .agents/skills/nse-bse-hybrid-trader/scripts/nse_alerts.py add --from-ledger --ist-bell
+python .agents/skills/nse-bse-hybrid-trader/scripts/nse_alerts.py watch --interval 30 --until 15:15 --beep
 
 # 5. Close paper trade & inspect settled tax-adjusted P&L
 python .agents/skills/nse-bse-hybrid-trader/scripts/broker_bridge.py close --trade-id 1 --exit-price 1352 --reason TARGET
@@ -327,9 +370,10 @@ python .agents/skills/nse-bse-hybrid-trader/scripts/broker_bridge.py stage \
 
 ## Automated Tests
 
-Run the full 12-test offline unit & integration suite (synthetic NSE 5m/1d fixtures, RFC-6238 TOTP vectors, ScripMaster
-CSV/JSON/GZIP parsing, SQLite paper ledger, tamper-fingerprint rejection, and mocked live HTTP dispatch across all 9
-brokers):
+Run the full 18-test offline unit & integration suite (synthetic NSE 5m/1d fixtures, Indian news/SEBI/RBI/BSE RSS &
+XXE sanitization, 2-stage scanner & T2T filtering, IST clock & SQLite ledger alerts, RFC-6238 TOTP vectors, ScripMaster
+CSV/JSON/GZIP parsing, SQLite paper ledger, tamper-fingerprint rejection, mocked live HTTP dispatch across all 9
+brokers, and stdlib terminal UI / ASCII fallback checks):
 
 ```bash
 python -m pytest -v
@@ -357,8 +401,12 @@ capital, inspect every file yourself:
 | [SKILL.md](.agents/skills/nse-bse-hybrid-trader/SKILL.md) | AI workflow instructions, gate rules, output format, and safety constraints |
 | [config/trading_rules.json](.agents/skills/nse-bse-hybrid-trader/config/trading_rules.json) | Verify **2026 STT, GST, SEBI, NSE exchange txn, stamp duty, DP charges, brokerage tiers, leverage, and risk limits** match your broker plan and latest SEBI/Union Budget rules |
 | [config/nse_holidays.json](.agents/skills/nse-bse-hybrid-trader/config/nse_holidays.json) | Verify official NSE/BSE holiday dates and Muhurat sessions for the current year |
-| [scripts/nse_common.py](.agents/skills/nse-bse-hybrid-trader/scripts/nse_common.py) | IST timezone conversion, `Rs. 0.05` `Decimal` tick rounding, symbol aliases, and Yahoo Finance HTTP client |
-| [scripts/nse_data_loader.py](.agents/skills/nse-bse-hybrid-trader/scripts/nse_data_loader.py) | Indicator formulas (EMA, SMA, Wilder RSI, MACD, Bollinger, ADX, ATR, VWAP), Fib swings, divergence rules, and 0-6 confluence scoring |
+| [scripts/nse_common.py](.agents/skills/nse-bse-hybrid-trader/scripts/nse_common.py) | IST clock, `Decimal` Rs. 0.05 ticks, symbol aliases, NSE holiday/F&O ban CSV, and Yahoo Spark/v8 helpers |
+| [scripts/nse_ui.py](.agents/skills/nse-bse-hybrid-trader/scripts/nse_ui.py) | Zero-dependency ANSI/Unicode/ASCII table, banner, progress bar, Indian INR formatting & safe output helpers |
+| [scripts/nse_scanner.py](.agents/skills/nse-bse-hybrid-trader/scripts/nse_scanner.py) | NiftyIndices + `EQUITY_L.csv` universe builder (`BE`/`BZ` filter), 2-stage Yahoo Spark -> v8 daily & 15m ORB+VWAP screener |
+| [scripts/nse_news.py](.agents/skills/nse-bse-hybrid-trader/scripts/nse_news.py) | Google News India, ET Stocks, LiveMint, SEBI, RBI & BSE RSS parser, NSE `fo_secban.csv`, move check & 30-day dedupe |
+| [scripts/nse_alerts.py](.agents/skills/nse-bse-hybrid-trader/scripts/nse_alerts.py) | IST market clock, SQLite `paper_orders` stop/target/15:10 flatten alerts, IST bells, cron `check` & live `watch` loop |
+| [scripts/nse_data_loader.py](.agents/skills/nse-bse-hybrid-trader/scripts/nse_data_loader.py) | Indicator formulas (EMA, SMA, Wilder RSI, MACD, Bollinger, ADX, ATR, VWAP), Fib swings, divergence rules, `--with-news`, and 0-6 confluence scoring |
 | [scripts/nse_timemachine.py](.agents/skills/nse-bse-hybrid-trader/scripts/nse_timemachine.py) | Bootstrap pool filtering, slot window sampling, conservative stop-first check, 15:15 IST cutoff, ORB replay, and `r_breakeven` / `strict_55` math |
 | [scripts/indian_risk_gate.py](.agents/skills/nse-bse-hybrid-trader/scripts/indian_risk_gate.py) | Position sizing decrement loop, statutory charge formula, daily drawdown SQLite query, circuit/F&O ban/ASM/IST blocks, and SHA-256 fingerprint |
 | [scripts/broker_bridge.py](.agents/skills/nse-bse-hybrid-trader/scripts/broker_bridge.py) | **CRITICAL:** Inspect `build_broker_payload()`, `_dispatch_*_live()`, and `_strip_attached_fields()`. Non-bracket orders (`zerodha`, `upstox`, `dhan`, `groww`, `kotak_neo`, `icici_breeze`, `shoonya`, `angel_one` `NORMAL`, `fyers` non-BO) record `attached_stoploss_trigger` / `attached_target_price` in the staged ticket and strip them on live entry dispatch — **you must place and verify separate stop-loss/GTT/target orders directly with your broker** |
@@ -408,8 +456,12 @@ capital, inspect every file yourself:
 │   │   ├── indian_market_rules.md        # IST sessions, SEBI rules & broker API matrix
 │   │   └── technical_frameworks.md       # 3-screen MTF, confluence, RSI div, Fib & trailing stops
 │   └── scripts/
-│       ├── nse_common.py                 # IST clock, Decimal Rs. 0.05 ticks, symbol & Yahoo helpers
-│       ├── nse_data_loader.py            # MTF indicators, VWAP, 15m ORB, Fib, divergence & confluence
+│       ├── nse_common.py                 # IST clock, Decimal Rs. 0.05 ticks, Yahoo Spark/v8 & F&O ban helpers
+│       ├── nse_ui.py                     # Stdlib terminal tables, banners, progress bars & Indian INR formatters
+│       ├── nse_scanner.py                # Universe builder, BE/BZ filter & 2-stage daily / 15m ORB+VWAP scanner
+│       ├── nse_news.py                   # Google News IN, ET/LiveMint/SEBI/RBI/BSE RSS, F&O ban & move monitor
+│       ├── nse_alerts.py                 # IST clock, SQLite paper_orders SL/TP/15:10 flatten & live watch loop
+│       ├── nse_data_loader.py            # MTF indicators, VWAP, 15m ORB, Fib, divergence, --with-news & score
 │       ├── nse_timemachine.py            # 10,000-path Monte Carlo Time Machine & 15m ORB replay
 │       ├── indian_risk_gate.py           # INR sizing, 2026 taxes, circuit breakers & SHA-256 fingerprint
 │       ├── broker_bridge.py              # 9-broker ScripMaster SQLite cache, paper ledger & live REST
@@ -418,7 +470,7 @@ capital, inspect every file yourself:
 │   ├── marketplace.json                  # Claude Code plugin marketplace manifest
 │   └── plugin.json                       # Plugin package metadata
 ├── tests/
-│   └── test_hybrid_trader.py             # 12 offline unit & end-to-end integration tests
+│   └── test_hybrid_trader.py             # 18 offline unit & end-to-end integration tests
 ├── .env.example                          # Template for local broker API keys (never commit .env)
 ├── .gitignore                            # Ignores .env, *.db, state/, caches
 ├── LICENSE                               # MIT License

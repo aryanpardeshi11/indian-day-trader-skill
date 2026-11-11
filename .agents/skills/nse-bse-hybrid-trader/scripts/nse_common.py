@@ -20,6 +20,10 @@ from pathlib import Path
 from typing import Any
 
 UA = "Mozilla/5.0 (compatible; nse-bse-hybrid-trader/1.0)"
+BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
 HOSTS = ("query2", "query1")
 PAUSE_SEC = 0.5
 BACKOFF_SEC = 5.0
@@ -295,6 +299,47 @@ def nse_session_info(
     }
 
 
+def trading_day_status(
+    d: datetime.date,
+    holidays_cfg: dict[str, Any] | None = None,
+) -> tuple[bool, str]:
+    """Return (is_trading_day, reason) accounting for NSE weekends, holidays & Muhurat."""
+    holidays_cfg = holidays_cfg or load_nse_holidays()
+    date_str = d.isoformat()
+    holiday_name = (holidays_cfg.get("holidays") or {}).get(date_str)
+    special_name = (holidays_cfg.get("special_sessions") or {}).get(date_str)
+    if special_name:
+        return True, f"Special session ({special_name})"
+    if holiday_name:
+        return False, f"NSE/BSE holiday: {holiday_name}"
+    if d.weekday() >= 5:
+        return False, "Weekend"
+    return True, "Regular session"
+
+
+def next_nse_open(
+    dt_ist: datetime.datetime,
+    rules: dict[str, Any] | None = None,
+    holidays_cfg: dict[str, Any] | None = None,
+) -> str:
+    """Find next NSE/BSE market open timestamp string in IST."""
+    rules = rules or load_trading_rules()
+    holidays_cfg = holidays_cfg or load_nse_holidays()
+    open_str = str(rules["session_ist"].get("market_open", "09:15"))
+    open_mins = parse_clock_minutes(open_str)
+    cur_mins = dt_ist.hour * 60 + dt_ist.minute
+    start_day = dt_ist.date() if cur_mins < open_mins else dt_ist.date() + datetime.timedelta(days=1)
+    for offset in range(20):
+        cand = start_day + datetime.timedelta(days=offset)
+        ok, _ = trading_day_status(cand, holidays_cfg=holidays_cfg)
+        if ok:
+            specials = holidays_cfg.get("special_sessions") or {}
+            if cand.isoformat() in specials:
+                return f"{cand.isoformat()} ({specials[cand.isoformat()]})"
+            return f"{cand.isoformat()} {open_str} IST"
+    return f"{(dt_ist.date() + datetime.timedelta(days=1)).isoformat()} {open_str} IST"
+
+
 def normalize_symbol(raw_symbol: str, default_exchange: str = "NSE") -> dict[str, Any]:
     raw = (raw_symbol or "").strip().upper()
     if not raw:
@@ -365,11 +410,52 @@ def yahoo_chart_url(yahoo_sym: str, range_: str = "60d", interval: str = "5m", h
     return f"https://{host}.finance.yahoo.com/v8/finance/chart/{encoded}?range={range_}&interval={interval}"
 
 
+def yahoo_spark_url(
+    symbols: list[str],
+    range_: str = "3mo",
+    interval: str = "1d",
+    host: str = "query2",
+) -> str:
+    joined = urllib.parse.quote(",".join(s.strip().upper() for s in symbols if s.strip()))
+    return f"https://{host}.finance.yahoo.com/v8/finance/spark?symbols={joined}&range={range_}&interval={interval}"
+
+
 def validate_http_url(url: str) -> str:
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme.lower() not in {"https", "http"} or not parsed.netloc:
         raise NSETraderError(f"Unsupported URL scheme or malformed URL: {url!r}")
     return url
+
+
+def fetch_url_bytes(
+    url: str,
+    timeout: int = 20,
+    accept: str = "*/*",
+    headers: dict[str, str] | None = None,
+    user_agent: str = BROWSER_UA,
+) -> bytes:
+    validated_url = validate_http_url(url)
+    req_headers = {"User-Agent": user_agent, "Accept": accept, "Accept-Encoding": "gzip"}
+    if headers:
+        req_headers.update(headers)
+    req = urllib.request.Request(validated_url, headers=req_headers)  # noqa: S310
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+        data = resp.read()
+        if str(resp.headers.get("Content-Encoding") or "").lower() == "gzip":
+            data = gzip.decompress(data)
+        return data
+
+
+def fetch_url_text(
+    url: str,
+    timeout: int = 20,
+    accept: str = "*/*",
+    headers: dict[str, str] | None = None,
+    user_agent: str = BROWSER_UA,
+    encoding: str = "utf-8",
+) -> str:
+    raw = fetch_url_bytes(url, timeout=timeout, accept=accept, headers=headers, user_agent=user_agent)
+    return raw.decode(encoding, "replace").lstrip("\ufeff")
 
 
 def _http_get_text(url: str, timeout: int = 20) -> str:
@@ -379,6 +465,87 @@ def _http_get_text(url: str, timeout: int = 20) -> str:
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
         return resp.read().decode("utf-8", "replace")
+
+
+def fetch_yahoo_spark(
+    symbols: list[str],
+    range_: str = "3mo",
+    interval: str = "1d",
+) -> dict[str, Any]:
+    """Fetch Yahoo Finance v8 spark batch JSON (up to 20 symbols) with query2->query1 failover."""
+    clean = [s.strip().upper() for s in symbols if s.strip()]
+    if not clean:
+        return {}
+    last_code: int | None = None
+    last_net_err: Exception | None = None
+    for idx, host in enumerate(HOSTS):
+        if idx:
+            time.sleep(PAUSE_SEC)
+        for attempt in (0, 1):
+            url = yahoo_spark_url(clean, range_=range_, interval=interval, host=host)
+            try:
+                raw = _http_get_text(url)
+                parsed = json.loads(raw)
+                return parsed if isinstance(parsed, dict) else {}
+            except urllib.error.HTTPError as exc:
+                last_code = exc.code
+                with contextlib.suppress(OSError):
+                    exc.close()
+                if exc.code == 429 and attempt == 0:
+                    time.sleep(BACKOFF_SEC)
+                    continue
+                if exc.code == 429 or exc.code >= 500:
+                    break
+                raise NSETraderError(f"Yahoo spark HTTP {exc.code}") from exc
+            except (http.client.HTTPException, OSError, ValueError) as exc:
+                last_net_err = exc
+                if attempt == 0:
+                    continue
+                break
+    if last_code == 429:
+        raise NSETraderError("Yahoo spark rate limited (HTTP 429)")
+    if last_code is not None:
+        raise NSETraderError(f"Yahoo spark failed (HTTP {last_code})")
+    raise NSETraderError(f"Network error in Yahoo spark: {last_net_err}") from last_net_err
+
+
+def parse_nse_fno_ban_csv(raw_text: str) -> dict[str, Any]:
+    """Parse NSE fo_secban.csv content into structured ban date & symbol list."""
+    lines = [ln.strip() for ln in raw_text.splitlines() if ln.strip()]
+    header = lines[0] if lines else ""
+    banned: list[str] = []
+    for ln in lines[1:]:
+        parts = [p.strip() for p in ln.split(",") if p.strip()]
+        if not parts:
+            continue
+        sym = parts[-1].upper()
+        if sym and re.match(r"^[A-Z0-9&-]+$", sym):
+            banned.append(sym)
+    return {"header": header, "symbols": sorted(set(banned))}
+
+
+def fetch_nse_fno_ban(
+    rules: dict[str, Any] | None = None,
+    offline_file: Path | str | None = None,
+) -> dict[str, Any]:
+    """Load current NSE F&O MWPL ban list (>95% limit) from nsearchives or offline CSV."""
+    if offline_file:
+        p = Path(offline_file)
+        if p.exists():
+            return parse_nse_fno_ban_csv(p.read_text(encoding="utf-8", errors="replace").lstrip("\ufeff"))
+        return {"header": "", "symbols": []}
+    rules = rules or load_trading_rules()
+    url = str((rules.get("feeds") or {}).get("nse_fno_ban_csv") or "")
+    if not url:
+        return {"header": "", "symbols": []}
+    try:
+        txt = fetch_url_text(url, timeout=12)
+        res = parse_nse_fno_ban_csv(txt)
+    except (OSError, urllib.error.URLError, NSETraderError):
+        return {"header": "", "symbols": [], "source": "unavailable"}
+    else:
+        res["source"] = "nsearchives"
+        return res
 
 
 def fetch_yahoo_chart(yahoo_sym: str, range_: str = "60d", interval: str = "5m") -> str:
@@ -452,4 +619,47 @@ def extract_chart_result(raw_text: str, yahoo_sym: str) -> dict[str, Any]:
         err = chart.get("error") or {}
         raise NSETraderError(f"No chart data for {yahoo_sym}: {err.get('description') or 'unknown error'}")
     return results[0]
+
+
+def extract_previous_close(res: dict[str, Any]) -> float | None:
+    """Return yesterday's completed close from a Yahoo v8 chart result.
+
+    Yahoo's `meta.chartPreviousClose` on `range=5d&interval=1d` returns the close
+    *before* the 5-day window (not yesterday's close). Using daily `timestamp` +
+    `close` bars before `regularMarketTime`'s IST date ensures accurate daily % move.
+    """
+    meta = res.get("meta") or {}
+    quote = ((res.get("indicators") or {}).get("quote") or [{}])[0] or {}
+    stamps = res.get("timestamp") or []
+    closes_list = quote.get("close") or []
+
+    by_date: dict[datetime.date, float] = {}
+    for idx, cl in enumerate(closes_list):
+        if cl is None or idx >= len(stamps) or stamps[idx] is None:
+            continue
+        bar_date = to_ist(utc_of(int(stamps[idx]))).date()
+        by_date[bar_date] = float(cl)
+
+    sorted_dates = sorted(by_date)
+    mkt_time = meta.get("regularMarketTime")
+    if sorted_dates and mkt_time is not None:
+        mkt_date = to_ist(utc_of(int(mkt_time))).date()
+        prior_dates = [d for d in sorted_dates if d < mkt_date]
+        if prior_dates:
+            return by_date[prior_dates[-1]]
+
+    if len(sorted_dates) >= 2:
+        return by_date[sorted_dates[-2]]
+
+    explicit_prev = meta.get("previousClose") or meta.get("regularMarketPreviousClose")
+    if explicit_prev is not None:
+        return float(explicit_prev)
+
+    if not stamps and str(meta.get("dataGranularity") or "1d") in ("1d", "1wk"):
+        valid = [float(c) for c in closes_list if c is not None]
+        if len(valid) >= 2:
+            return valid[-2]
+
+    chart_prev = meta.get("chartPreviousClose")
+    return float(chart_prev) if chart_prev is not None else None
 

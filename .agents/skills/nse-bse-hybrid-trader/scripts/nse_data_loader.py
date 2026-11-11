@@ -37,6 +37,8 @@ from nse_common import (
     to_ist,
     utc_of,
 )
+from nse_news import fetch_indian_news
+from nse_ui import UI, format_inr, safe_print
 
 NSE_SESSION_BARS = 75  # 09:15 to 15:25 IST (5-minute bars)
 NSE_OPEN_MIN = 9 * 60 + 15
@@ -535,6 +537,9 @@ def analyze_symbol(
     circuit_band_pct: float | None = None,
     fno_ban: bool = False,
     asm_gsm: bool = False,
+    with_news: bool = False,
+    news_hours: int = 72,
+    offline_news: str | None = None,
 ) -> dict[str, Any]:
     rules = load_trading_rules()
     holidays = load_nse_holidays()
@@ -628,9 +633,40 @@ def analyze_symbol(
         daily_ctx, weekly_ctx, intraday_ctx, fib_ctx, div_flags, tick=tick, delivery_pct=delivery_pct
     )
 
+    news_section: dict[str, Any] | None = None
+    effective_fno_ban = fno_ban
+    if with_news:
+        try:
+            n_res = fetch_indian_news(
+                tickers=[sym_info["base"]],
+                hours=news_hours,
+                include_reg=True,
+                include_moves=False,
+                market_mode=False,
+                show_all=True,
+                max_per_ticker=5,
+                now_str=now_str,
+                offline_dir=offline_news,
+                write_state=False,
+            )
+            t_entry = (n_res.get("tickers") or [{}])[0]
+            if t_entry.get("in_fno_ban"):
+                effective_fno_ban = True
+            news_section = {
+                "available": True,
+                "hours_lookback": news_hours,
+                "in_fno_ban": bool(t_entry.get("in_fno_ban")),
+                "flags": t_entry.get("flags") or [],
+                "items": t_entry.get("items") or [],
+                "regulatory_alerts": n_res.get("regulatory_alerts") or [],
+                "warnings": n_res.get("warnings") or [],
+            }
+        except (NSETraderError, OSError) as exc:
+            news_section = {"available": False, "error": str(exc), "items": []}
+
     # Regulatory & circuit warnings
     reg_warnings: list[str] = []
-    if fno_ban:
+    if effective_fno_ban:
         reg_warnings.append("F&O BAN (>95% MWPL): Fresh F&O entries blocked")
     if asm_gsm:
         reg_warnings.append("SEBI ASM/GSM Surveillance: Intraday MIS/BO margin restricted")
@@ -642,13 +678,13 @@ def analyze_symbol(
     elif pct_change_from_pdc is not None and abs(pct_change_from_pdc) >= 4.5:
         reg_warnings.append(f"Large move from PDC ({pct_change_from_pdc:+.2f}%): verify circuit band (5%/10%/20%)")
 
-    return {
+    report: dict[str, Any] = {
         "symbol": sym_info,
         "meta_exchange": meta_5m.get("exchangeName") or sym_info["exchange"],
         "currency": meta_5m.get("currency") or "INR",
         "session": session_info,
         "regulatory": {
-            "fno_ban": fno_ban,
+            "fno_ban": effective_fno_ban,
             "asm_gsm": asm_gsm,
             "circuit_band_pct": circuit_band_pct,
             "delivery_pct": delivery_pct,
@@ -661,36 +697,264 @@ def analyze_symbol(
         "rsi_divergences": div_flags,
         "confluence": confluence,
     }
+    if news_section is not None:
+        report["news"] = news_section
+    return report
 
 
-def format_human_report(data: dict[str, Any]) -> str:
+def _phase_beginner_tip(phase: str) -> str:
+    tips = {
+        "PRE_OPEN": "Order matching (09:00-09:15 IST) - wait for 09:30 before entering.",
+        "OPENING_RANGE": "First 15m discovery (09:15-09:30 IST) - watch ORH/ORL form, do not chase.",
+        "PRIMARY_EXECUTION": "Best intraday window (09:30-14:30 IST) - liquid & trend-friendly.",
+        "HAZARD_WINDOW_NO_NEW_ENTRY": "Late session (14:30-15:10 IST) - no new intraday entries; protect profits.",
+        "AUTO_SQUAREOFF_ZONE": "Broker square-off zone (15:10-15:30 IST) - exit open intraday trades now.",
+        "POST_MARKET": "Market closed - ideal for planning tomorrow's swing/intraday levels.",
+        "CLOSED_WEEKEND": "Weekend - NSE/BSE closed; analysis uses latest completed session.",
+        "CLOSED_HOLIDAY": "Exchange holiday - NSE/BSE closed; verify next trading session.",
+    }
+    return tips.get(phase, "Check IST session phase before placing orders.")
+
+
+def _rsi_zone_label(rsi: float | None) -> str:
+    if rsi is None:
+        return "N/A"
+    if rsi >= 70:
+        return "OVERBOUGHT (>=70)"
+    if rsi >= 55:
+        return "BULLISH (55-70)"
+    if rsi >= 45:
+        return "NEUTRAL (45-55)"
+    if rsi >= 30:
+        return "BEARISH (30-45)"
+    return "OVERSOLD (<30)"
+
+
+def format_human_report(data: dict[str, Any], color: bool | None = None) -> str:
+    ui = UI(color=color)
     s = data["symbol"]
     sess = data["session"]
     d = data["daily"]
     w = data["weekly"]
-    intra = data["intraday"]
+    intra = data.get("intraday") or {}
     conf = data["confluence"]
     cand = conf["candidate_setup"]
-    fib = data["fibonacci"]
+    fib = data.get("fibonacci") or {}
     ltp_val = intra.get("ltp") if intra.get("ltp") is not None else d["close"]
     pct_val = d.get("pct_change_from_pdc")
-    pct_str = f"{pct_val:+.2f}%" if pct_val is not None else "N/A"
-    lines = [
-        f"=== NSE/BSE Market Structure: {s['yahoo']} ({s['exchange']}) ===",
-        f"IST Time      : {sess['ist_timestamp']} | Phase: {sess['phase']} | Intraday Window Open: {sess['intraday_entry_allowed']}",
-        f"LTP / PDC     : Rs. {ltp_val:.2f} (vs PDC Rs. {d['pdc']:.2f}, {pct_str})",
-        f"PDH / PDL     : Rs. {d['pdh']:.2f} / Rs. {d['pdl']:.2f} | ATR(14): Rs. {d['atr14']}",
-        f"HTF Bias      : Weekly={w['bias']} (RSI {w['rsi14_w']}) | Daily EMA 20/50/200={d['ema20']}/{d['ema50']}/{d['ema200']}",
-        f"Daily Momentum: RSI(14)={d['rsi14']} | ADX={d['adx']['adx']} | MACD Hist={d['macd']['histogram']} | RVOL={d['relative_volume']}x",
-        f"Intraday 5m/15m: ORH={intra.get('opening_range_15m', {}).get('orh')} ORL={intra.get('opening_range_15m', {}).get('orl')} ({intra.get('opening_range_15m', {}).get('status')}) | VWAP={intra.get('anchored_vwap')} ({intra.get('vwap_bias')})",
-        f"Fibonacci ({fib.get('direction', 'N/A')}): 50%={fib.get('retracements', {}).get('50.0%')} | 61.8%={fib.get('retracements', {}).get('61.8%')} | Golden Pocket={fib.get('in_golden_pocket_50_618')}",
-        f"RSI Divergences: {', '.join(data['rsi_divergences']) if data['rsi_divergences'] else 'None detected in 60d'}",
-        f"Confluence    : {conf['bias']} ({conf['active_confluence_score']}/{conf['score_out_of']}) -> {'; '.join(conf['reasons'])}",
-        f"Candidate Plan: {cand['side'].upper()} Entry={cand['entry']:.2f} | Stop={cand['stop_loss']:.2f} | T1={cand['target_1']:.2f} | T2={cand['target_2']:.2f}",
+
+    score = int(conf.get("active_confluence_score", 0))
+    out_of = int(conf.get("score_out_of", 6))
+    bias = str(conf.get("bias", "NEUTRAL")).upper()
+    bias_tone = "bull" if bias == "BULLISH" else ("bear" if bias == "BEARISH" else "neutral")
+
+    win_open = bool(sess.get("intraday_entry_allowed"))
+    win_str = ui.green("OPEN", bold=True) if win_open else ui.yellow("CLOSED / WAIT", bold=True)
+    ts_short = str(sess.get("ist_timestamp", "")).replace("T", " ")[:19] + " IST"
+
+    blocks: list[str] = [
+        ui.banner(
+            title=f"NSE/BSE MARKET STRUCTURE  {ui.dot_ch}  {s['yahoo']} ({s['exchange']})",
+            subtitle=f"{ts_short}  |  Phase: {sess.get('phase', 'N/A')}",
+            badge=f"{bias} {score}/{out_of}",
+            badge_tone=bias_tone,
+            meta_lines=[
+                f"LTP: {ui.bold(format_inr(ltp_val))} ({ui.trend_pct(pct_val)} vs PDC {format_inr(d.get('pdc'))})   |   Intraday Entry Window: {win_str}",
+                ui.dim(_phase_beginner_tip(str(sess.get("phase", "")))),
+            ],
+        )
     ]
-    if data["regulatory"]["warnings"]:
-        lines.append("Reg Warnings  : " + " | ".join(data["regulatory"]["warnings"]))
-    return "\n".join(lines)
+
+    # Table 1: Key Price Levels
+    or_info = intra.get("opening_range_15m") or {}
+    orh = or_info.get("orh")
+    orl = or_info.get("orl")
+    or_status = or_info.get("status") or "N/A"
+    or_price_str = f"{orh:,.2f} / {orl:,.2f}" if (orh is not None and orl is not None) else "N/A"
+    vwap_val = intra.get("anchored_vwap")
+    vwap_bias = intra.get("vwap_bias") or "N/A"
+    atr_val = d.get("atr14")
+
+    level_rows = [
+        [
+            "Last Traded Price (LTP)",
+            format_inr(ltp_val),
+            ui.trend_pct(pct_val),
+            "Current/latest price vs yesterday's close (PDC).",
+        ],
+        [
+            "Prev Day High / Low",
+            f"{d['pdh']:,.2f} / {d['pdl']:,.2f}" if d.get("pdh") is not None and d.get("pdl") is not None else "N/A",
+            "Key S/R",
+            "Yesterday's high (resistance) & low (support).",
+        ],
+        [
+            "15m Opening Range (ORH/L)",
+            or_price_str,
+            ui.tone(str(or_status), "good" if "ABOVE" in str(or_status) else ("bad" if "BELOW" in str(or_status) else "warn")),
+            "First 15m (09:15-09:30) range; breakout signals direction.",
+        ],
+        [
+            "Anchored Intraday VWAP",
+            format_inr(vwap_val) if vwap_val is not None else "N/A",
+            ui.tone(str(vwap_bias), "good" if "ABOVE" in str(vwap_bias) else ("bad" if "BELOW" in str(vwap_bias) else "warn")),
+            "Avg volume-weighted price today; buyers dominate above VWAP.",
+        ],
+        [
+            "Daily ATR (14)",
+            format_inr(atr_val) if atr_val is not None else "N/A",
+            "Volatility",
+            "Typical 1-day price swing; used to size safe stop-losses.",
+        ],
+    ]
+    blocks.append("")
+    blocks.append(ui.section("1. Price & Key Levels (Today's Map)", "Compare LTP against yesterday's range, 15m ORB, and VWAP."))
+    blocks.append(
+        ui.table(
+            headers=["Level", "Price (INR)", "Status", "Beginner Guide"],
+            rows=level_rows,
+            alignments=["left", "right", "left", "left"],
+            nowrap_cols={0, 1},
+        )
+    )
+
+    # Table 2: Technical Indicators
+    adx_dict = d.get("adx") or {}
+    adx_val = adx_dict.get("adx")
+    adx_label = "STRONG (>=25)" if (adx_val is not None and float(adx_val) >= 25) else ("TRENDING (20-25)" if (adx_val is not None and float(adx_val) >= 20) else ("WEAK/CHOPPY (<20)" if adx_val is not None else "N/A"))
+    macd_hist = (d.get("macd") or {}).get("histogram")
+    macd_sig = "BULLISH (+)" if (macd_hist is not None and float(macd_hist) > 0) else ("BEARISH (-)" if (macd_hist is not None and float(macd_hist) < 0) else "N/A")
+    rvol = d.get("relative_volume")
+    rvol_sig = "HIGH (>=1.5x)" if (rvol is not None and float(rvol) >= 1.5) else ("NORMAL" if rvol is not None else "N/A")
+    ema20, ema50, ema200 = d.get("ema20"), d.get("ema50"), d.get("ema200")
+    ema_str = f"{ema20 if ema20 is not None else 'N/A'} / {ema50 if ema50 is not None else 'N/A'} / {ema200 if ema200 is not None else 'N/A'}"
+    fib_ret = fib.get("retracements") or {}
+    fib_str = f"50%={fib_ret.get('50.0%', 'N/A')} | 61.8%={fib_ret.get('61.8%', 'N/A')}"
+    in_gp = fib.get("in_golden_pocket_50_618")
+    gp_str = ui.green("IN GOLDEN POCKET", bold=True) if in_gp else ("Outside pocket" if in_gp is not None else "N/A")
+    divs = ", ".join(data.get("rsi_divergences") or []) or "None in 60d"
+
+    ind_rows = [
+        [
+            "Weekly Trend (HTF)",
+            f"RSI {w.get('rsi14_w', 'N/A')}",
+            ui.tone(str(w.get("bias", "N/A")), "bull" if w.get("bias") == "BULLISH" else ("bear" if w.get("bias") == "BEARISH" else "warn"), bold=True),
+            "Big-picture trend; trading with weekly bias raises win odds.",
+        ],
+        [
+            "Daily EMAs (20/50/200)",
+            ema_str,
+            "Trend MAs",
+            "Price > EMA20 > EMA50 > EMA200 = healthy uptrend.",
+        ],
+        [
+            "Daily RSI (14)",
+            f"{d.get('rsi14', 'N/A')}",
+            _rsi_zone_label(d.get("rsi14")),
+            "Momentum gauge (30=oversold bounce zone, 70=overbought).",
+        ],
+        [
+            "MACD Histogram",
+            f"{macd_hist if macd_hist is not None else 'N/A'}",
+            ui.tone(macd_sig, "good" if "+" in macd_sig else ("bad" if "-" in macd_sig else "dim")),
+            "Positive = upward momentum accelerating; Negative = fading.",
+        ],
+        [
+            "ADX (Trend Strength)",
+            f"{adx_val if adx_val is not None else 'N/A'}",
+            adx_label,
+            "Measures trend power (>25 strong trend; <20 sideways chop).",
+        ],
+        [
+            "Relative Volume (RVOL)",
+            f"{rvol}x" if rvol is not None else "N/A",
+            ui.tone(rvol_sig, "good" if "HIGH" in rvol_sig else "dim"),
+            "Today's volume vs 20-day avg (>1.5x confirms real buying/selling).",
+        ],
+        [
+            f"Fibonacci ({fib.get('direction', 'N/A')})",
+            fib_str,
+            gp_str,
+            "50%-61.8% retracement ('Golden Pocket') is a classic pullback zone.",
+        ],
+        [
+            "RSI Divergences",
+            divs,
+            "Reversal Clue",
+            "Price vs RSI mismatch hinting momentum shift.",
+        ],
+    ]
+    blocks.append("")
+    blocks.append(ui.section("2. Technical Indicators & Trend Confluence"))
+    blocks.append(
+        ui.table(
+            headers=["Indicator", "Value", "Reading", "Beginner Guide"],
+            rows=ind_rows,
+            alignments=["left", "left", "left", "left"],
+        )
+    )
+
+    # Confluence Bar + Setup Coordinates
+    bar_s = ui.bar(score, out_of, width=14, tone_name="good" if score >= 4 else ("warn" if score >= 3 else "bad"))
+    qual_note = ui.green("Actionable (>=3/6)", bold=True) if score >= 3 else ui.red("Skip (<3/6)", bold=True)
+    reasons_str = "  |  ".join(conf.get("reasons") or ["No clear directional triggers"])
+
+    side = str(cand.get("side", "buy")).upper()
+    side_tone = "good" if side == "BUY" else "bad"
+    entry_v = float(cand.get("entry", 0.0))
+    stop_v = float(cand.get("stop_loss", 0.0))
+    t1_v = float(cand.get("target_1", 0.0))
+    t2_v = float(cand.get("target_2", 0.0))
+    risk_unit = abs(entry_v - stop_v)
+
+    blocks.append("")
+    blocks.append(ui.section(f"3. Confluence & Setup  [{bar_s}] {score}/{out_of}  {qual_note}", f"Triggers: {reasons_str}"))
+    blocks.append(
+        ui.table(
+            headers=["Side", "Entry (Rs.)", "Stop-Loss (Rs.)", "Target 1 (1.6R)", "Target 2 (2.5R)", "Risk / Share"],
+            rows=[
+                [
+                    ui.tone(side, side_tone, bold=True),
+                    format_inr(entry_v),
+                    ui.red(format_inr(stop_v)),
+                    ui.green(format_inr(t1_v)),
+                    ui.green(format_inr(t2_v)),
+                    format_inr(risk_unit),
+                ]
+            ],
+            alignments=["center", "right", "right", "right", "right", "right"],
+            nowrap_cols={0, 1, 2, 3, 4, 5},
+            footer="All levels rounded to Rs. 0.05 NSE/BSE tick grid. Never trade without validating via Time Machine + Risk Gate.",
+        )
+    )
+
+    reg_warnings = (data.get("regulatory") or {}).get("warnings") or []
+    if reg_warnings:
+        blocks.append("")
+        blocks.append(ui.callout("Regulatory / Surveillance Warnings", reg_warnings, tone_name="warn"))
+
+    news = data.get("news")
+    if isinstance(news, dict):
+        items = news.get("items") or []
+        blocks.append("")
+        if items:
+            h_lbl = "headline" if len(items) == 1 else "headlines"
+            blocks.append(ui.section(f"News ({len(items)} {h_lbl}, {news.get('hours_lookback', 72)}h)"))
+            n_rows = [
+                [
+                    str(it.get("publisher", "News")),
+                    ", ".join(it.get("tags") or []) or "-",
+                    str(it.get("title", "")),
+                ]
+                for it in items[:5]
+            ]
+            blocks.append(ui.table(["Publisher", "Tags", "Headline"], n_rows, alignments=["left", "left", "left"]))
+        elif news.get("available"):
+            blocks.append(ui.section("News (0 headlines matched in lookback window)"))
+        elif news.get("error"):
+            blocks.append(ui.callout("News Warning", [str(news["error"])], tone_name="warn"))
+
+    return "\n".join(blocks)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -705,6 +969,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--circuit-band", type=float, default=None, help="Price circuit band %% (e.g., 5, 10, 20)")
     p.add_argument("--fno-ban", action="store_true", help="Flag ticker as currently in NSE F&O ban (>95%% MWPL)")
     p.add_argument("--asm-gsm", action="store_true", help="Flag ticker under SEBI ASM/GSM surveillance")
+    p.add_argument("--with-news", action="store_true", help="Include Indian news/regulatory RSS + live F&O ban check")
+    p.add_argument("--news-hours", type=int, default=72, help="News lookback window in hours when --with-news is set")
+    p.add_argument("--offline-news", default=None, help="Offline news fixtures directory when testing --with-news")
     p.add_argument("--json", action="store_true", help="Output structured JSON")
     return p
 
@@ -723,6 +990,9 @@ def main(argv: list[str] | None = None) -> int:
             circuit_band_pct=args.circuit_band,
             fno_ban=args.fno_ban,
             asm_gsm=args.asm_gsm,
+            with_news=args.with_news,
+            news_hours=args.news_hours,
+            offline_news=args.offline_news,
         )
     except NSETraderError as exc:
         print(json.dumps({"error": str(exc)}) if args.json else f"ERROR: {exc}", file=sys.stderr)
@@ -730,7 +1000,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps(report, indent=2))
     else:
-        print(format_human_report(report))
+        safe_print(format_human_report(report))
     return 0
 
 

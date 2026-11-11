@@ -238,5 +238,52 @@
         "FNO_OPT": {"brokerage_mode": "flat", "brokerage_flat_inr": 0.0, "brokerage_pct": 0.0, "brokerage_min_inr": 0.0}
       }
     }
+  },
+  "feeds": {
+    "google_news_india_rss": "https://news.google.com/rss/search?q={query}&hl=en-IN&gl=IN&ceid=IN:en",
+    "yahoo_rss": "https://feeds.finance.yahoo.com/rss/2.0/headline?s={symbol}&region=IN&lang=en-IN",
+    "et_stocks_rss": "https://economictimes.indiatimes.com/markets/stocks/rssfeeds/2146842.cms",
+    "et_markets_rss": "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms",
+    "livemint_markets_rss": "https://www.livemint.com/rss/markets",
+    "sebi_rss": "https://www.sebi.gov.in/sebirss.xml",
+    "rbi_press_rss": "https://rbi.org.in/pressreleases_rss.xml",
+    "bse_notices_rss": "https://www.bseindia.com/data/xml/notices.xml",
+    "nse_fno_ban_csv": "https://nsearchives.nseindia.com/content/fo/fo_secban.csv",
+    "nse_fno_lots_csv": "https://nsearchives.nseindia.com/content/fo/fo_mktlots.csv",
+    "nse_equity_list_csv": "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv",
+    "nifty_indices_csv": {
+      "nifty50": "https://www.niftyindices.com/IndexConstituent/ind_nifty50list.csv",
+      "niftynext50": "https://www.niftyindices.com/IndexConstituent/ind_niftynext50list.csv",
+      "niftybank": "https://www.niftyindices.com/IndexConstituent/ind_niftybanklist.csv",
+      "nifty200": "https://www.niftyindices.com/IndexConstituent/ind_nifty200list.csv",
+      "nifty500": "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv"
+    }
+  },
+  "scanner": {
+    "default_pool": "nifty50",
+    "default_min_price_inr": 50.0,
+    "default_min_volume": 100000,
+    "default_min_turnover_cr": 10.0,
+    "default_or_minutes": 15,
+    "max_confirm_charts": 100,
+    "spark_batch_size": 20,
+    "parallel_workers": 8,
+    "exclude_t2t_series": ["BE", "BZ"]
+  },
+  "news": {
+    "default_hours": 72,
+    "keep_days": 30,
+    "move_alert_pct": 3.0,
+    "max_items_per_ticker": 10
+  },
+  "alerts": {
+    "default_poll_sec": 30,
+    "default_flat_reminder_ist": "15:10",
+    "bell_schedule_ist": [
+      {"id": "nse-open-bell", "at": "09:15", "label": "NSE/BSE Regular Session Open"},
+      {"id": "nse-or-complete", "at": "09:30", "label": "15m Opening Range Complete (ORH/ORL Fixed)"},
+      {"id": "nse-hazard-lock", "at": "14:30", "label": "Intraday Hazard Window: No New Entries"},
+      {"id": "nse-flatten-warning", "at": "15:10", "label": "Flatten Intraday Positions Before Broker Square-Off"}
+    ]
   }
 }

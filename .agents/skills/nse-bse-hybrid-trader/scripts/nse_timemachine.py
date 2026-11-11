@@ -42,6 +42,7 @@ from nse_common import (
     write_json_atomic,
 )
 from nse_data_loader import NSE_OPEN_MIN, NSE_SESSION_BARS, parse_bars_from_chart
+from nse_ui import UI, format_inr, safe_print
 
 if TYPE_CHECKING:
     import datetime
@@ -473,32 +474,212 @@ def run_timemachine(
     }
 
 
-def format_human_tm(res: dict[str, Any]) -> str:
+def format_human_tm(res: dict[str, Any], color: bool | None = None) -> str:
+    ui = UI(color=color)
     ctx = res["context"]
-    lines = [
-        f"=== NSE/BSE Time Machine ({res['mode']}, gate={res['gate_mode']}): {res['verdict']} ===",
-        f"Symbol       : {res['yahoo_symbol']} | Side={res['side'].upper()} | Replays={res['replays']:,} (seed={res['seed']})",
-        f"Coordinates  : Entry={res['effective_entry_with_slippage']:.2f} (planned {res['planned_entry']:.2f}, +{res['slippage_ticks']} tick slip) | Stop={res['stop']:.2f} | Target={res['target']:.2f} ({res['r_at_target']:.2f}R)",
-        f"Hit Odds     : Target={res['p_target_pct']:.2f}% | Stop={res['p_stop_pct']:.2f}% | Open@Cutoff={res['p_neither_pct']:.2f}% | Target-First(Resolved)={res['target_first_resolved_pct']:.2f}%",
-        f"Thresholds   : R-Breakeven(net)={res['breakeven_prob_net_pct']:.2f}% ({'PASS' if res['passes_r_breakeven'] else 'FAIL'}) | Strict {res['strict_prob_floor_pct']:.0f}%={'PASS' if res['passes_strict_55'] else 'FAIL'}",
-        f"Expectancy   : Gross EV={res['avg_gross_r']:+.4f}R | Tax Drag=-{res['estimated_tax_drag_r']:.4f}R | Net EV={res['avg_net_r']:+.4f}R (Rs. {res['net_ev_inr']:+.2f} on {res['sample_qty_for_ev']} qty)",
-        f"Cutoff Range : Median=Rs.{res['median_close']:.2f} (5th-95th: Rs.{res['p5_close']:.2f} - Rs.{res['p95_close']:.2f}) | Green={res['p_green_pct']:.2f}%",
+    verdict = str(res["verdict"]).upper()
+    v_tone = "pass" if verdict == "PASS" else "no-trade"
+
+    blocks: list[str] = [
+        ui.banner(
+            title=f"NSE/BSE TIME MACHINE  {ui.dot_ch}  {res['yahoo_symbol']} ({res['mode']})",
+            subtitle=f"Side: {res['side'].upper()}  |  Broker: {res.get('broker', 'standard')}  |  Gate: {res['gate_mode']}  |  Replays: {res['replays']:,} (seed {res['seed']})",
+            badge=verdict,
+            badge_tone=v_tone,
+            meta_lines=[
+                ui.dim("What this does: Replays 10,000 realistic historical price paths to test if your setup actually beats Indian taxes & stop-outs.")
+            ],
+        )
     ]
+
+    # Table 1: Trade Coordinates
+    blocks.append("")
+    blocks.append(ui.section("1. Simulated Trade Coordinates (Includes 1-Tick Slippage)"))
+    blocks.append(
+        ui.table(
+            headers=["Planned Entry", "Effective Fill", "Slippage", "Stop-Loss", "Target", "Gross R:R"],
+            rows=[
+                [
+                    format_inr(res["planned_entry"]),
+                    ui.bold(format_inr(res["effective_entry_with_slippage"])),
+                    f"+{res['slippage_ticks']} tick",
+                    ui.red(format_inr(res["stop"])),
+                    ui.green(format_inr(res["target"])),
+                    ui.cyan(f"{res['r_at_target']:.2f}R", bold=True),
+                ]
+            ],
+            alignments=["right", "right", "center", "right", "right", "right"],
+        )
+    )
+
+    # Table 2: Simulation Hit Odds
+    p_t = float(res["p_target_pct"])
+    p_s = float(res["p_stop_pct"])
+    p_n = float(res["p_neither_pct"])
+    p_res = float(res["target_first_resolved_pct"])
+    p_grn = float(res["p_green_pct"])
+    req_prob = float(res["strict_prob_floor_pct"] if res["gate_mode"] == "strict_55" else res["breakeven_prob_net_pct"])
+
+    odds_rows = [
+        [
+            "Target Hit First",
+            f"{p_t:6.2f}%",
+            ui.bar(p_t, 100.0, width=16, tone_name="good"),
+            "Paths that reached your target before hitting stop.",
+        ],
+        [
+            "Stop-Loss Hit First",
+            f"{p_s:6.2f}%",
+            ui.bar(p_s, 100.0, width=16, tone_name="bad"),
+            "Paths that stopped out for a loss (stop checked first).",
+        ],
+        [
+            "Still Open @ Cutoff",
+            f"{p_n:6.2f}%",
+            ui.bar(p_n, 100.0, width=16, tone_name="warn"),
+            "Neither hit by cutoff (15:15 IST intraday / horizon end).",
+        ],
+        [
+            "Target-First (Resolved)",
+            ui.tone(f"{p_res:6.2f}%", "good" if p_res >= req_prob else "bad", bold=True),
+            ui.bar(p_res, 100.0, width=16, tone_name="good" if p_res >= req_prob else "bad"),
+            f"Win rate among decided trades (needs >={req_prob:.1f}% to pass).",
+        ],
+        [
+            "Closed In Profit (Green)",
+            f"{p_grn:6.2f}%",
+            ui.bar(p_grn, 100.0, width=16, tone_name="info"),
+            "% of all replays ending above your effective entry price.",
+        ],
+    ]
+    blocks.append("")
+    blocks.append(ui.section("2. 10,000-Path Outcome Odds"))
+    blocks.append(
+        ui.table(
+            headers=["Outcome", "Probability", "Visual Share", "Beginner Explanation"],
+            rows=odds_rows,
+            alignments=["left", "right", "left", "left"],
+        )
+    )
+
+    # Table 3: Gates & Expectancy
+    rb_pass = bool(res["passes_r_breakeven"])
+    st_pass = bool(res["passes_strict_55"])
+    net_r = float(res["avg_net_r"])
+    net_ev_inr = float(res["net_ev_inr"])
+    gate_rows = [
+        [
+            "R-Breakeven Gate (Net)",
+            f">= {res['breakeven_prob_net_pct']:.2f}%",
+            f"{p_res:.2f}%",
+            ui.green("PASS", bold=True) if rb_pass else ui.red("FAIL", bold=True),
+            "Minimum win rate needed to beat taxes at this R:R.",
+        ],
+        [
+            f"Strict {res['strict_prob_floor_pct']:.0f}% Filter",
+            f">= {res['strict_prob_floor_pct']:.2f}%",
+            f"{p_res:.2f}%",
+            ui.green("PASS", bold=True) if st_pass else ui.yellow("FAIL", bold=True),
+            "Optional high-win-rate filter (--gate-mode strict_55).",
+        ],
+        [
+            "Gross Expected Value",
+            "> 0.0000R",
+            f"{res['avg_gross_r']:+.4f}R",
+            ui.green("POSITIVE") if res["avg_gross_r"] > 0 else ui.red("NEGATIVE"),
+            "Average reward in R-multiples before taxes/brokerage.",
+        ],
+        [
+            "Broker + Statutory Tax Drag",
+            "Friction",
+            f"-{res['estimated_tax_drag_r']:.4f}R",
+            ui.dim("Cost"),
+            "Estimated STT, GST, Stamp, SEBI & brokerage drag.",
+        ],
+        [
+            "Net Expected Value (EV)",
+            "> 0.0000R",
+            ui.tone(f"{net_r:+.4f}R", "good" if net_r > 0 else "bad", bold=True),
+            ui.pnl_inr(net_ev_inr),
+            f"Expected profit/loss per trade on {res['sample_qty_for_ev']} qty.",
+        ],
+    ]
+    blocks.append("")
+    blocks.append(ui.section("3. Probability Gates & Tax-Adjusted Edge (EV)"))
+    blocks.append(
+        ui.table(
+            headers=["Check / Metric", "Required", "Actual", "Status / Value", "What This Means"],
+            rows=gate_rows,
+            alignments=["left", "right", "right", "left", "left"],
+            footer=f"Cutoff Price Range: 5th%={format_inr(res['p5_close'])} | Median={format_inr(res['median_close'])} | 95th%={format_inr(res['p95_close'])}",
+        )
+    )
+
+    # Table 4: Historical Pool & ORB Backtest
+    blocks.append("")
     if res["mode"] == "INTRADAY":
         orb = ctx["historical_orb_replay"]
-        lines.append(
-            f"Session Pool : {ctx['full_sessions_in_pool']} full NSE sessions | Window {ctx['entry_time_ist']}->{ctx['cutoff_ist']} IST ({ctx['bars_simulated_per_path']} bars)"
-        )
-        lines.append(
-            f"15m ORB Hist : {orb['orb_signals_fired']}/{orb['sessions_tested']} signals -> Target={orb['target_hits']} Stop={orb['stop_hits']} Cutoff={orb['cutoff_closes']} (AvgR={orb['avg_R']})"
+        blocks.append(ui.section("4. Historical Session Pool & 15m ORB Backtest"))
+        blocks.append(
+            ui.table(
+                headers=["Sessions", "Window (IST)", "ORB Hits", "Targets", "Stops", "Cutoffs", "Avg R"],
+                rows=[
+                    [
+                        str(ctx["full_sessions_in_pool"]),
+                        f"{ctx['entry_time_ist']}->{ctx['cutoff_ist']} ({ctx['bars_simulated_per_path']}b)",
+                        f"{orb['orb_signals_fired']}/{orb['sessions_tested']}",
+                        ui.green(str(orb["target_hits"])),
+                        ui.red(str(orb["stop_hits"])),
+                        str(orb["cutoff_closes"]),
+                        str(orb["avg_R"]),
+                    ]
+                ],
+                alignments=["right", "center", "center", "right", "right", "right", "right"],
+                nowrap_cols={0, 1, 2, 3, 4, 5, 6},
+            )
         )
     else:
-        lines.append(f"Swing Pool   : {ctx['daily_bars_in_pool']} daily bars | Horizon={ctx['swing_horizon_days']} trading days")
+        blocks.append(ui.section("4. Swing Simulation Pool"))
+        blocks.append(
+            ui.table(
+                headers=["Daily Bars in Pool", "Swing Horizon", "Cutoff Distribution (5th / Median / 95th)"],
+                rows=[
+                    [
+                        str(ctx["daily_bars_in_pool"]),
+                        f"{ctx['swing_horizon_days']} trading days",
+                        f"{format_inr(res['p5_close'])} / {format_inr(res['median_close'])} / {format_inr(res['p95_close'])}",
+                    ]
+                ],
+                alignments=["right", "center", "center"],
+            )
+        )
+
     if res["warnings"]:
-        lines.append("Warnings     : " + " ; ".join(res["warnings"]))
+        blocks.append("")
+        blocks.append(ui.callout("Simulation Warnings", res["warnings"], tone_name="warn"))
     if res["fail_reasons"]:
-        lines.append("NO-TRADE Why : " + " ; ".join(res["fail_reasons"]))
-    return "\n".join(lines)
+        blocks.append("")
+        blocks.append(
+            ui.callout(
+                "NO-TRADE Reasons (Setup Rejected)",
+                [
+                    *res["fail_reasons"],
+                    "Tip: Try widening stop to true structure, picking a cleaner target >= 1.8R, or wait for better trend alignment.",
+                ],
+                tone_name="bad",
+            )
+        )
+    elif verdict == "PASS":
+        blocks.append("")
+        blocks.append(
+            ui.callout(
+                "Next Step",
+                ["Probability & EV edge cleared. Run indian_risk_gate.py --timemachine-json state/timemachine_result.json to size your INR trade."],
+                tone_name="good",
+            )
+        )
+
+    return "\n".join(blocks)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -572,7 +753,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps(res, indent=2))
     else:
-        print(format_human_tm(res))
+        safe_print(format_human_tm(res))
     return 0 if res["verdict"] == "PASS" else 1
 
 

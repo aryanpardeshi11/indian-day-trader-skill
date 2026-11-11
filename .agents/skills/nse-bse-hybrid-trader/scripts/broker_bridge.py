@@ -70,6 +70,7 @@ from nse_common import (
     round_tick,
     validate_http_url,
 )
+from nse_ui import UI, format_inr, safe_print
 
 try:
     import pyotp
@@ -1812,6 +1813,323 @@ def _execute_cli_command(args: argparse.Namespace) -> dict[str, Any]:
     raise NSETraderError(f"Unknown command {args.command}")
 
 
+def _fmt_broker_seg_fee(seg_cfg: dict[str, Any] | None, *, multiline: bool = True) -> str:
+    if not seg_cfg:
+        return "Default"
+    mode = str(seg_cfg.get("brokerage_mode", "flat"))
+    flat = float(seg_cfg.get("brokerage_flat_inr", 0.0))
+    pct = float(seg_cfg.get("brokerage_pct", 0.0)) * 100.0
+    min_f = float(seg_cfg.get("brokerage_min_inr", 0.0))
+    if mode == "flat":
+        return "Rs.0" if flat == 0 else f"Rs.{flat:.0f}"
+    if mode == "pct":
+        return f"{pct:.3g}%"
+    if mode == "min_flat_or_pct":
+        sep = "\n" if multiline else " "
+        base = f"{pct:.3g}% (<={flat:.0f})"
+        return f"{base}{sep}(min Rs.{min_f:.0f})" if min_f > 0 else base
+    return f"Rs.{flat:.0f}"
+
+
+def format_broker_output(command: str, out: dict[str, Any], color: bool | None = None) -> str:
+    ui = UI(color=color)
+
+    if command == "brokers":
+        default_b = str(out.get("default_broker", "angel_one"))
+        fee_rows: list[list[str]] = []
+        env_rows: list[list[str]] = []
+        for b in out.get("brokers") or []:
+            key = str(b.get("broker", ""))
+            tag = ui.green(f"{key} *", bold=True) if key == default_b else key
+            brk = b.get("brokerage") or {}
+            deliv = brk.get("EQ_DELIVERY") or {}
+            dp = float(deliv.get("dp_charge_sell_inr") or 0.0)
+            fut_s = _fmt_broker_seg_fee(brk.get("FNO_FUT"), multiline=False)
+            opt_s = _fmt_broker_seg_fee(brk.get("FNO_OPT"), multiline=False)
+            fee_rows.append(
+                [
+                    tag,
+                    str(b.get("display_name", "")).replace(" (Trade Free Plan)", ""),
+                    _fmt_broker_seg_fee(deliv),
+                    _fmt_broker_seg_fee(brk.get("EQ_INTRADAY")),
+                    f"F:{fut_s}\nO:{opt_s}",
+                    f"Rs.{dp:.2f}",
+                    "Yes" if b.get("requires_token_lookup") else "No",
+                ]
+            )
+            env_rows.append(
+                [
+                    tag,
+                    str(b.get("content_type", "application/json")),
+                    ", ".join(b.get("env_vars") or []),
+                ]
+            )
+        return "\n".join(
+            [
+                ui.banner(
+                    title="SUPPORTED INDIAN BROKERS & 2026 FEE PROFILES",
+                    subtitle=f"Default broker: {default_b} (*)  |  Total configured: {out.get('count', len(fee_rows))}",
+                    badge=f"{len(fee_rows)} BROKERS",
+                    badge_tone="info",
+                    meta_lines=[ui.dim("Paper trading (--paper) is 100% free and needs ZERO broker API keys.")],
+                ),
+                "",
+                ui.section("1. Brokerage & Fee Comparison (Values in INR / %)"),
+                ui.table(
+                    headers=["--broker", "Platform", "Delivery", "Intraday", "F&O (Fut/Opt)", "DP Sell", "Tok"],
+                    rows=fee_rows,
+                    alignments=["left", "left", "left", "left", "left", "right", "center"],
+                    nowrap_cols={0, 2, 3, 4, 5, 6},
+                ),
+                "",
+                ui.section("2. Live Mode Credentials (.env Keys -- Only Needed for --live)"),
+                ui.table(
+                    headers=["--broker", "API Format", "Required Local .env Variables"],
+                    rows=env_rows,
+                    alignments=["left", "left", "left"],
+                    nowrap_cols={0, 1},
+                    footer="Pass --broker <flag> to any command, or edit default_broker in config/trading_rules.json.",
+                ),
+            ]
+        )
+
+    if command == "sync-scrip":
+        src = out.get("source")
+        src_s = ", ".join(src) if isinstance(src, list) else str(src or "")
+        return "\n".join(
+            [
+                ui.banner(
+                    title=f"SCRIP MASTER SYNCED  {ui.dot_ch}  {out.get('broker', '')}",
+                    badge=str(out.get("status", "SYNCED")),
+                    badge_tone="pass",
+                ),
+                "",
+                ui.kv_table(
+                    [
+                        ("Broker", str(out.get("broker", "")), "Broker instrument namespace in local cache."),
+                        ("Instruments Cached", f"{int(out.get('instruments', 0)):,}", "Ready for <2ms offline token & lot lookups."),
+                        ("Source", src_s, "Official broker master file or --offline path."),
+                        ("SQLite DB", str(out.get("db_path", "")), "Local cache path."),
+                    ],
+                    headers=("Field", "Value", "Details"),
+                ),
+            ]
+        )
+
+    if command == "lookup":
+        exp_val = str(out.get("expiry") or "").strip()
+        strike_raw = str(out.get("strike") or "").strip()
+        is_spot = not exp_val and strike_raw in ("", "-1", "-1.0", "0", "0.0")
+        contract_s = "Spot Equity (No Expiry)" if is_spot else f"Expiry: {exp_val or '-'}  |  Strike: {strike_raw or '-'}"
+        return "\n".join(
+            [
+                ui.banner(
+                    title=f"INSTRUMENT TOKEN LOOKUP  {ui.dot_ch}  {out.get('symbol', '')} ({out.get('exch_seg', '')})",
+                    subtitle=f"Broker: {out.get('broker', '')}  |  Lookup speed: {out.get('lookup_ms', 0)} ms",
+                    badge="FOUND",
+                    badge_tone="pass",
+                ),
+                "",
+                ui.kv_table(
+                    [
+                        ("Trading Symbol", ui.bold(str(out.get("symbol", ""))), "Exact broker symbol sent in order payload."),
+                        ("Broker Token", ui.cyan(str(out.get("token", ""))), f"Exchange segment: {out.get('exch_seg', '')}."),
+                        ("Lot Size / Tick", f"{out.get('lotsize', 1)} qty  |  Rs. {float(out.get('tick_size', 0.05)):.2f}", "Minimum quantity multiple & price step."),
+                        ("Contract / Series", f"{out.get('instrumenttype') or 'EQ'}  |  {contract_s}", "Equity spot vs F&O derivative contract details."),
+                    ],
+                    headers=("Attribute", "Resolved Value", "Beginner Guide"),
+                ),
+            ]
+        )
+
+    if command == "stage":
+        mode = str(out.get("mode", "PAPER")).upper()
+        is_paper = mode == "PAPER"
+        payload = out.get("broker_payload") or out.get("payload") or {}
+        has_attached_strip = "attached_stoploss_trigger" in payload or "attached_target_price" in payload
+
+        blocks: list[str] = [
+            ui.banner(
+                title=f"{'PAPER ORDER STAGED' if is_paper else 'LIVE ORDER DISPATCHED'}  {ui.dot_ch}  {out.get('symbol', payload.get('tradingsymbol', ''))}",
+                subtitle=f"Broker: {out.get('broker', '')}  |  Mode: {mode}  |  Fingerprint: {out.get('fingerprint', '')}",
+                badge=str(out.get("status", mode)),
+                badge_tone="info" if is_paper else "warn",
+            ),
+            "",
+        ]
+        if is_paper:
+            blocks.append(ui.section("1. Paper Order Ticket (Simulated 1-Tick Slippage)"))
+            blocks.append(
+                ui.table(
+                    headers=["ID", "Side", "Qty", "Entry (Rs.)", "Fill (+Slip)", "Stop (Rs.)", "Target (Rs.)", "Max Risk"],
+                    rows=[
+                        [
+                            f"#{out.get('trade_id', '-')}",
+                            ui.tone(str(out.get("side", "")).upper(), "good" if out.get("side") == "buy" else "bad", bold=True),
+                            str(out.get("qty", 0)),
+                            f"{float(out.get('planned_entry') or 0.0):,.2f}",
+                            ui.bold(f"{float(out.get('filled_entry_with_slippage') or 0.0):,.2f}"),
+                            ui.red(f"{float(out.get('stop_loss') or 0.0):,.2f}"),
+                            ui.green(f"{float(out.get('target_price') or 0.0):,.2f}"),
+                            ui.yellow(format_inr(out.get("max_risk_inr"))),
+                        ]
+                    ],
+                    alignments=["center", "center", "right", "right", "right", "right", "right", "right"],
+                    nowrap_cols={0, 1, 2, 3, 4, 5, 6, 7},
+                    footer=f"Saved to SQLite paper ledger: {out.get('ledger_db', '')}",
+                )
+            )
+            blocks.append("")
+            blocks.append(
+                ui.callout(
+                    "Beginner Next Steps (Paper Trade Active)",
+                    [
+                        "Register SL, Target & 15:10 IST alerts: python scripts/nse_alerts.py add --from-ledger --ist-bell",
+                        f"Close when target/stop hits: python scripts/broker_bridge.py close --trade-id {out.get('trade_id', 1)} --exit-price <PRICE> --reason TARGET",
+                    ],
+                    tone_name="info",
+                )
+            )
+        else:
+            blocks.append(ui.section("1. Live Dispatch Response"))
+            blocks.append(
+                ui.kv_table(
+                    [
+                        ("Broker", str(out.get("broker", ""))),
+                        ("Status", str(out.get("status", ""))),
+                        ("Session IST", str((out.get("session") or {}).get("ist_timestamp", ""))),
+                        ("Broker Response", json.dumps(out.get("broker_response") or {})),
+                    ],
+                    headers=("Field", "Value"),
+                )
+            )
+
+        if has_attached_strip:
+            blocks.append("")
+            blocks.append(
+                ui.callout(
+                    "Important Safety Note for Non-Bracket Live Orders",
+                    [
+                        "For non-ROBO/non-BO brokers, attached_stoploss_trigger & attached_target_price are recorded here for tracking ONLY and stripped on live entry dispatch.",
+                        "Always place & verify a separate Stop-Loss / GTT / Target order directly inside your broker app!",
+                    ],
+                    tone_name="warn",
+                )
+            )
+
+        blocks.append("")
+        blocks.append(ui.section("2. Broker-Native Order Payload"))
+        blocks.append(json.dumps(payload, indent=2))
+        return "\n".join(blocks)
+
+    if command == "close":
+        net_pnl = float(out.get("realized_net_pnl_inr", 0.0))
+        gross_pnl = float(out.get("gross_pnl_inr", 0.0))
+        return "\n".join(
+            [
+                ui.banner(
+                    title=f"PAPER TRADE CLOSED  {ui.dot_ch}  #{out.get('trade_id', '')} {out.get('symbol', '')}",
+                    subtitle=f"Broker: {out.get('broker', '')}  |  Status: {out.get('status', '')}",
+                    badge="PROFIT" if net_pnl > 0 else ("LOSS" if net_pnl < 0 else "FLAT"),
+                    badge_tone="good" if net_pnl > 0 else ("bad" if net_pnl < 0 else "warn"),
+                ),
+                "",
+                ui.table(
+                    headers=["ID", "Symbol", "Qty", "Entry (Rs.)", "Exit (Rs.)", "Gross P&L", "Fees/Tax", "Net P&L"],
+                    rows=[
+                        [
+                            f"#{out.get('trade_id', '')}",
+                            ui.bold(str(out.get("symbol", ""))),
+                            str(out.get("qty", 0)),
+                            f"{float(out.get('filled_entry') or 0.0):,.2f}",
+                            f"{float(out.get('exit_price') or 0.0):,.2f}",
+                            ui.pnl_inr(gross_pnl, bold=False),
+                            ui.red(f"-{format_inr(out.get('total_charges_inr'))}"),
+                            ui.pnl_inr(net_pnl, bold=True),
+                        ]
+                    ],
+                    alignments=["center", "left", "right", "right", "right", "right", "right", "right"],
+                    nowrap_cols={0, 1, 2, 3, 4, 5, 6, 7},
+                ),
+            ]
+        )
+
+    if command == "ledger":
+        trades = out.get("trades") or []
+        realized = float(out.get("realized_net_pnl_inr", 0.0))
+        open_risk = float(out.get("open_risk_inr", 0.0))
+        dd_lim = float(out.get("daily_drawdown_limit_inr", 0.0))
+        b_filter = out.get("broker_filter") or "ALL"
+        used = max(0.0, -min(0.0, realized) + open_risk)
+        dd_bar = ui.bar(used, dd_lim if dd_lim > 0 else 1.0, width=16, tone_name="warn" if used < dd_lim else "bad")
+
+        blocks = [
+            ui.banner(
+                title="PAPER TRADING LEDGER & DAILY RISK BUDGET",
+                subtitle=f"Broker Filter: {b_filter}  |  Trades Shown: {out.get('count', len(trades))}",
+                badge=f"NET {format_inr(realized, signed=True)}",
+                badge_tone="good" if realized > 0 else ("bad" if realized < 0 else "info"),
+                meta_lines=[
+                    f"Realized P&L: {ui.pnl_inr(realized)}  |  Open Risk: {ui.yellow(format_inr(open_risk))}  |  DD Limit: {format_inr(dd_lim)}",
+                    f"Daily Risk Budget Used: [{dd_bar}] {format_inr(used)} / {format_inr(dd_lim)}",
+                ],
+            ),
+            "",
+        ]
+        if not trades:
+            blocks.append(
+                ui.callout(
+                    "Ledger Empty",
+                    [
+                        "No paper trades recorded yet for this filter.",
+                        "Stage your first risk-free trade with broker_bridge.py stage ... --paper after passing the Risk Gate.",
+                    ],
+                    tone_name="info",
+                )
+            )
+            return "\n".join(blocks)
+
+        t_rows: list[list[str]] = []
+        for t in trades:
+            st = str(t.get("status", ""))
+            is_open = st == "OPEN"
+            side_s = str(t.get("side", "")).upper()
+            side_qty = ui.tone(f"{side_s} {t.get('qty', 0)}", "good" if side_s == "BUY" else "bad", bold=True)
+            entry_v = float(t.get("filled_entry") or 0.0)
+            plan_s = (
+                f"{entry_v:,.2f}\nSL {t['stop_loss']:.2f} | TP {t['target_price']:.2f}"
+                if is_open
+                else f"{entry_v:,.2f} -> {float(t.get('exit_price') or 0.0):,.2f}"
+            )
+            pnl_s = (
+                ui.yellow(f"OPEN\nRisk {format_inr(t.get('max_risk_inr'))}")
+                if is_open
+                else f"{ui.pnl_inr(t.get('realized_net_pnl_inr'))}\n{ui.dim(st)}"
+            )
+            t_rows.append(
+                [
+                    f"#{t.get('id', '')}",
+                    str(t.get("trade_date", "")),
+                    str(t.get("broker", "")),
+                    ui.bold(str(t.get("symbol", ""))),
+                    side_qty,
+                    plan_s,
+                    pnl_s,
+                ]
+            )
+        blocks.append(
+            ui.table(
+                headers=["ID", "Date", "Broker", "Symbol", "Side/Qty", "Prices (Rs.)", "Status & Net P&L"],
+                rows=t_rows,
+                alignments=["center", "left", "left", "left", "left", "left", "left"],
+                nowrap_cols={0, 1, 2, 3, 4, 5, 6},
+            )
+        )
+        return "\n".join(blocks)
+
+    return json.dumps(out, indent=2)
+
+
 def main(argv: list[str] | None = None, default_broker: str = "angel_one") -> int:
     args = build_parser(default_broker=default_broker).parse_args(argv)
     try:
@@ -1820,7 +2138,10 @@ def main(argv: list[str] | None = None, default_broker: str = "angel_one") -> in
         print(json.dumps({"error": str(exc)}) if getattr(args, "json", False) else f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    print(json.dumps(out, indent=2))
+    if getattr(args, "json", False):
+        print(json.dumps(out, indent=2))
+    else:
+        safe_print(format_broker_output(args.command, out))
     return 0
 
 

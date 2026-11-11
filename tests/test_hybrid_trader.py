@@ -10,14 +10,18 @@ import json
 import sqlite3
 import urllib.error
 import urllib.request
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
 import pytest
 
 import indian_risk_gate
+import nse_alerts
 import nse_data_loader
+import nse_news
+import nse_scanner
 import nse_timemachine
+import nse_ui
 import smartapi_bridge
 from broker_bridge import (
     close_paper_trade as mb_close_paper_trade,
@@ -27,6 +31,9 @@ from broker_bridge import (
 )
 from broker_bridge import (
     lookup_scrip as mb_lookup_scrip,
+)
+from broker_bridge import (
+    main as mb_main,
 )
 from broker_bridge import (
     read_ledger as mb_read_ledger,
@@ -1064,5 +1071,842 @@ def test_legacy_db_migration_and_edge_cases(tmp_path: Path) -> None:
     assert tm_sh["broker"] == "shoonya"
     assert tm_ic["broker"] == "icici_breeze"
     assert tm_ic["estimated_charges_inr"] > tm_sh["estimated_charges_inr"]
+
+
+def _make_daily_chart_payload(yahoo_sym: str, closes: list[float], volumes: list[float] | None = None) -> dict[str, Any]:
+    stamps, opens, highs, lows, vols = [], [], [], [], []
+    cur = datetime.date(2026, 9, 1)
+    idx = 0
+    while idx < len(closes):
+        if cur.weekday() < 5:
+            bar_dt = datetime.datetime.combine(cur, datetime.time(9, 15))
+            stamps.append(_ist_to_unix(bar_dt))
+            c = float(closes[idx])
+            prev = float(closes[idx - 1]) if idx > 0 else c
+            opens.append(prev)
+            highs.append(round(max(c, prev) * 1.005, 2))
+            lows.append(round(min(c, prev) * 0.995, 2))
+            vols.append(float(volumes[idx]) if volumes else 5_000_000.0)
+            idx += 1
+        cur += datetime.timedelta(days=1)
+    return {
+        "chart": {
+            "result": [
+                {
+                    "meta": {
+                        "symbol": yahoo_sym,
+                        "exchangeName": "NSI",
+                        "currency": "INR",
+                        "regularMarketPrice": float(closes[-1]),
+                        "chartPreviousClose": float(closes[-2]) if len(closes) >= 2 else float(closes[-1]),
+                        "regularMarketTime": stamps[-1],
+                    },
+                    "timestamp": stamps,
+                    "indicators": {
+                        "quote": [
+                            {
+                                "open": opens,
+                                "high": highs,
+                                "low": lows,
+                                "close": [float(c) for c in closes],
+                                "volume": vols,
+                            }
+                        ]
+                    },
+                }
+            ]
+        }
+    }
+
+
+def _make_single_session_5m(
+    yahoo_sym: str,
+    day: datetime.date,
+    or_high: float = 100.0,
+    or_low: float = 98.0,
+    breakout_close: float = 102.5,
+) -> dict[str, object]:
+    stamps, opens, highs, lows, closes, vols = [], [], [], [], [], []
+    # Build 12 5m bars from 09:15 to 10:10 IST
+    for slot in range(12):
+        bar_dt = datetime.datetime.combine(day, datetime.time(9, 15)) + datetime.timedelta(minutes=5 * slot)
+        stamps.append(_ist_to_unix(bar_dt))
+        if slot < 3:
+            o = round((or_high + or_low) / 2.0, 2)
+            h = or_high
+            low_v = or_low
+            c = round(or_high - 0.3, 2)
+            v = 100_000.0
+        elif slot == 3:
+            o = round(or_high - 0.2, 2)
+            h = round(breakout_close + 0.4, 2)
+            low_v = round(or_high - 0.5, 2)
+            c = breakout_close
+            v = 450_000.0
+        else:
+            o = breakout_close
+            h = round(breakout_close + 0.6, 2)
+            low_v = round(breakout_close - 0.2, 2)
+            c = round(breakout_close + 0.2, 2)
+            v = 200_000.0
+        opens.append(o)
+        highs.append(h)
+        lows.append(low_v)
+        closes.append(c)
+        vols.append(v)
+    return {
+        "chart": {
+            "result": [
+                {
+                    "meta": {
+                        "symbol": yahoo_sym,
+                        "exchangeName": "NSI",
+                        "currency": "INR",
+                        "chartPreviousClose": round(or_low - 1.0, 2),
+                    },
+                    "timestamp": stamps,
+                    "indicators": {
+                        "quote": [
+                            {
+                                "open": opens,
+                                "high": highs,
+                                "low": lows,
+                                "close": closes,
+                                "volume": vols,
+                            }
+                        ]
+                    },
+                }
+            ]
+        }
+    }
+
+
+def test_indian_news_feeds_dedupe_and_data_loader_integration(tmp_path: Path) -> None:
+    # 1. Indian pubDate parsing (RFC-2822, SEBI "+0530", RBI naive IST, ISO)
+    assert nse_news.parse_indian_pubdate("Wed, 11 Nov 2026 09:15:00 GMT") == datetime.datetime(
+        2026, 11, 11, 9, 15, tzinfo=datetime.timezone.utc
+    )
+    sebi_dt = nse_news.parse_indian_pubdate("10 Nov, 2026 +0530")
+    assert sebi_dt == datetime.datetime(2026, 11, 9, 18, 30, tzinfo=datetime.timezone.utc)
+    rbi_dt = nse_news.parse_indian_pubdate("Wed, 11 Nov 2026 13:40:00")
+    assert rbi_dt == datetime.datetime(2026, 11, 11, 8, 10, tzinfo=datetime.timezone.utc)
+
+    # 2. XXE stripping + catalyst classification
+    xxe_rss = b"""<?xml version="1.0" encoding="ISO-8859-1"?>
+    <!DOCTYPE rss [<!ENTITY xxe "bad">]>
+    <rss version="2.0"><channel><item>
+      <title>Suzlon Energy bags 500 MW EPC order win, Q2 PAT surges - Moneycontrol</title>
+      <link>https://example.com/suzlon-1</link>
+      <pubDate>Wed, 11 Nov 2026 08:30:00 GMT</pubDate>
+      <source>Moneycontrol</source>
+    </item></channel></rss>"""
+    parsed_items = nse_news.parse_rss_items(xxe_rss, "Google News IN")
+    assert len(parsed_items) == 1
+    assert parsed_items[0]["title"] == "Suzlon Energy bags 500 MW EPC order win, Q2 PAT surges"
+    assert set(parsed_items[0]["tags"]) >= {"earnings", "order_win"}
+
+    # 3. Offline news bundle + F&O ban + MOVE>=3% + SQLite paper_orders auto-discovery
+    off_dir = tmp_path / "offline_news"
+    off_dir.mkdir()
+    (off_dir / "gnews-SUZLON.xml").write_bytes(xxe_rss)
+    (off_dir / "et-stocks.xml").write_text(
+        "<rss version='2.0'><channel><item>"
+        "<title>SEBI issues show cause inquiry affecting SUZLON peer compliance</title>"
+        "<link>https://example.com/et-1</link>"
+        "<pubDate>Wed, 11 Nov 2026 09:00:00 GMT</pubDate>"
+        "</item></channel></rss>",
+        encoding="utf-8",
+    )
+    (off_dir / "sebi.xml").write_text(
+        "<rss version='2.0'><channel><item>"
+        "<title>SEBI Adjudication Order on F&amp;O Ban &amp; MWPL violation</title>"
+        "<link>https://sebi.gov.in/ord1</link>"
+        "<pubDate>10 Nov, 2026 +0530</pubDate>"
+        "</item></channel></rss>",
+        encoding="utf-8",
+    )
+    (off_dir / "fo_secban.csv").write_text(
+        "Securities in Ban For Trade Date 11-NOV-2026\n1,SUZLON\n",
+        encoding="utf-8",
+    )
+    # SUZLON +5% daily chart
+    (off_dir / "chart-SUZLON.NS.json").write_text(
+        json.dumps(_make_daily_chart_payload("SUZLON.NS", [50.0, 50.0, 52.5])),
+        encoding="utf-8",
+    )
+
+    # Seed OPEN paper trade in SQLite so auto-discovery finds SUZLON with no --tickers flag
+    staged = mb_stage_or_execute_order(
+        symbol="SUZLON",
+        entry=52.0,
+        stop=49.0,
+        target=58.0,
+        segment="EQ_DELIVERY",
+        now_str="2026-11-11 10:15",
+        state_dir=tmp_path,
+    )
+    assert staged["symbol"] == "SUZLON"
+    assert nse_news.discover_default_tickers(tmp_path) == ["SUZLON"]
+
+    rep1 = nse_news.fetch_indian_news(
+        tickers=None,
+        hours=72,
+        now_str="2026-11-11 15:00",
+        state_dir=tmp_path,
+        offline_dir=off_dir,
+        write_state=True,
+    )
+    t_suz = rep1["tickers"][0]
+    assert t_suz["symbol"] == "SUZLON"
+    assert t_suz["in_fno_ban"] is True
+    assert t_suz["move"]["is_moving"] is True
+    assert any("FNO_BAN" in f for f in t_suz["flags"])
+    assert any("MOVING (+5.00%)" in f for f in t_suz["flags"])
+    assert t_suz["news_count"] == 2
+    assert len(rep1["regulatory_alerts"]) == 1
+
+    # Second run suppresses already-seen items; show_all=True brings them back
+    rep2 = nse_news.fetch_indian_news(
+        tickers=["SUZLON"],
+        hours=72,
+        now_str="2026-11-11 15:05",
+        state_dir=tmp_path,
+        offline_dir=off_dir,
+        show_all=False,
+    )
+    assert rep2["tickers"][0]["news_count"] == 0
+    assert any("WITH NO FRESH HEADLINE" in f for f in rep2["tickers"][0]["flags"])
+
+    rep3 = nse_news.fetch_indian_news(
+        tickers=["SUZLON"],
+        hours=72,
+        now_str="2026-11-11 15:05",
+        state_dir=tmp_path,
+        offline_dir=off_dir,
+        show_all=True,
+    )
+    assert rep3["tickers"][0]["news_count"] == 2
+
+    # 4. Data loader --with-news propagates F&O ban & attaches news
+    f_5m = _make_offline_nse_5m(tmp_path / "SUZLON.NS-5m.json", num_days=25, base_price=50.0)
+    f_1d = _make_offline_daily(tmp_path / "SUZLON.NS-1d.json", num_days=220, base_price=45.0)
+    dl = analyze_symbol(
+        symbol="SUZLON",
+        now_str="2026-11-11 11:00",
+        offline_5m=str(f_5m),
+        offline_1d=str(f_1d),
+        offline_1wk=str(f_1d),
+        with_news=True,
+        offline_news=str(off_dir),
+    )
+    assert dl["regulatory"]["fno_ban"] is True
+    assert dl["news"]["in_fno_ban"] is True
+    assert len(dl["news"]["items"]) == 2
+    assert "News (2 headlines" in format_human_report(dl)
+
+
+def test_indian_scanner_universe_daily_and_orb_offline(tmp_path: Path) -> None:
+    off_sc = tmp_path / "scanner_offline"
+    off_sc.mkdir()
+
+    (off_sc / "ind_nifty50list.csv").write_text(
+        "Company Name,Industry,Symbol,Series,ISIN Code\n"
+        "Bank of Baroda,Financial Services,BANKBARODA,EQ,INE028A01039\n"
+        "Breakout Co,Capital Goods,BREAKCO,EQ,INE000A01001\n"
+        "Trade2Trade Co,Textiles,T2TCO,BE,INE000A01002\n",
+        encoding="utf-8",
+    )
+    (off_sc / "EQUITY_L.csv").write_text(
+        "SYMBOL,NAME OF COMPANY,SERIES,DATE OF LISTING,PAID UP VALUE,MARKET LOT,ISIN NUMBER,FACE VALUE\n"
+        "BANKBARODA,Bank of Baroda,EQ,01-JAN-2000,2,1,INE028A01039,2\n"
+        "BREAKCO,Breakout Co Ltd,EQ,01-JAN-2000,10,1,INE000A01001,10\n"
+        "T2TCO,Trade2Trade Co Ltd,BE,01-JAN-2000,10,1,INE000A01002,10\n",
+        encoding="utf-8",
+    )
+    (off_sc / "fo_mktlots.csv").write_text(
+        "Derivatives on Individual Securities\n"
+        "Sr.No,Symbol,NOV-26,DEC-26\n"
+        "1,BANKBARODA,2925,2925\n",
+        encoding="utf-8",
+    )
+    (off_sc / "fo_secban.csv").write_text(
+        "Securities in Ban For Trade Date 11-NOV-2026\n1,BANKBARODA\n",
+        encoding="utf-8",
+    )
+
+    uni = nse_scanner.build_indian_universe(
+        pool="nifty50", state_dir=tmp_path, offline_dir=off_sc, write=True
+    )
+    assert uni["count"] == 3
+    by_sym = {row["symbol"]: row for row in uni["symbols"]}
+    assert by_sym["BANKBARODA"]["is_fno"] is True
+    assert by_sym["BANKBARODA"]["lot_size"] == 2925
+    assert by_sym["BANKBARODA"]["in_fno_ban"] is True
+    assert by_sym["T2TCO"]["series"] == "BE"
+    assert (tmp_path / "universe.txt").exists()
+
+    # Daily charts: BREAKCO makes 20-day closing breakout; T2TCO also breaks out but should be filtered unless --include-t2t
+    breakout_closes = [100.0 + (i % 3) for i in range(25)] + [120.0]
+    flat_closes = [200.0 for _ in range(26)]
+    (off_sc / "BREAKCO.NS.json").write_text(
+        json.dumps(_make_daily_chart_payload("BREAKCO.NS", breakout_closes)),
+        encoding="utf-8",
+    )
+    (off_sc / "T2TCO.NS.json").write_text(
+        json.dumps(_make_daily_chart_payload("T2TCO.NS", breakout_closes)),
+        encoding="utf-8",
+    )
+    (off_sc / "BANKBARODA.NS.json").write_text(
+        json.dumps(_make_daily_chart_payload("BANKBARODA.NS", flat_closes)),
+        encoding="utf-8",
+    )
+
+    daily_res = nse_scanner.scan_daily_indian(
+        pool="nifty50",
+        setup_filter="breakout_20d",
+        min_price=50.0,
+        min_volume=100_000,
+        min_turnover_cr=10.0,
+        now_str="2026-11-11 16:00",
+        state_dir=tmp_path,
+        offline_path=off_sc,
+        write=True,
+    )
+    assert daily_res["skipped_t2t_count"] == 1
+    assert [h["symbol"] for h in daily_res["hits"]] == ["BREAKCO"]
+    assert "breakout_20d" in daily_res["hits"][0]["setups"]
+    assert (tmp_path / "watchlist.json").exists()
+
+    # Include T2T -> returns both BREAKCO and T2TCO
+    daily_t2t = nse_scanner.scan_daily_indian(
+        pool="nifty50",
+        setup_filter="breakout_20d",
+        include_t2t=True,
+        now_str="2026-11-11 16:00",
+        state_dir=tmp_path,
+        offline_path=off_sc,
+        write=False,
+    )
+    assert {h["symbol"] for h in daily_t2t["hits"]} == {"BREAKCO", "T2TCO"}
+
+    # ORB scan: overwrite offline dir with clean 5m ORB fixtures
+    orb_dir = tmp_path / "orb_offline"
+    orb_dir.mkdir()
+    sess_day = datetime.date(2026, 11, 11)
+    (orb_dir / "ORBHIT.NS.json").write_text(
+        json.dumps(_make_single_session_5m("ORBHIT.NS", sess_day, or_high=250.0, or_low=245.0, breakout_close=254.0)),
+        encoding="utf-8",
+    )
+    orb_res = nse_scanner.scan_orb_indian(
+        symbols_csv="ORBHIT",
+        now_str="2026-11-11 10:30",
+        state_dir=tmp_path,
+        offline_path=orb_dir,
+        write=True,
+    )
+    assert len(orb_res["hits"]) == 1
+    hit = orb_res["hits"][0]
+    assert hit["symbol"] == "ORBHIT"
+    assert hit["orh"] == 250.0
+    assert hit["trigger_time_ist"] == "09:35"
+    assert hit["above_vwap"] is True
+
+    # Before 09:30 IST raises clean error
+    with pytest.raises(NSETraderError, match="Opening range"):
+        nse_scanner.scan_orb_indian(
+            symbols_csv="ORBHIT",
+            now_str="2026-11-11 09:20",
+            state_dir=tmp_path,
+            offline_path=orb_dir,
+            write=False,
+        )
+
+
+def test_indian_alerts_clock_ledger_short_directions_and_watch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # 1. Clock on Diwali-Balipratipada holiday (2026-11-10) -> closed, next open 2026-11-11 09:15 IST
+    hol = nse_alerts.get_nse_clock_status("2026-11-10 10:15")
+    assert hol["is_market_open"] is False
+    assert hol["phase"] == "CLOSED_HOLIDAY"
+    assert hol["next_open_ist"] == "2026-11-11 09:15 IST"
+
+    open_st = nse_alerts.get_nse_clock_status("2026-11-11 10:15")
+    assert open_st["is_market_open"] is True
+    assert open_st["intraday_entry_allowed"] is True
+
+    # 2. Stage a SHORT intraday paper trade & a LONG delivery paper trade in SQLite paper_orders
+    t_short = mb_stage_or_execute_order(
+        symbol="TATAMOTORS",
+        entry=800.0,
+        stop=812.0,
+        target=776.0,
+        segment="EQ_INTRADAY",
+        side="sell",
+        capital_inr=100_000.0,
+        now_str="2026-11-11 10:00",
+        state_dir=tmp_path,
+    )
+    t_long = mb_stage_or_execute_order(
+        symbol="BANKBARODA",
+        entry=247.0,
+        stop=235.0,
+        target=275.0,
+        segment="EQ_DELIVERY",
+        side="buy",
+        capital_inr=100_000.0,
+        now_str="2026-11-11 10:05",
+        state_dir=tmp_path,
+    )
+
+    rc_sync = nse_alerts.main(["add", "--from-ledger", "--state-dir", str(tmp_path), "--json"])
+    assert rc_sync == 0
+    capsys.readouterr()
+    rc_bell = nse_alerts.main(["add", "--ist-bell", "--state-dir", str(tmp_path)])
+    assert rc_bell == 0
+    capsys.readouterr()
+
+    rules_doc = json.loads((tmp_path / "alerts.json").read_text(encoding="utf-8"))
+    rule_ids = {r["id"] for r in rules_doc["rules"]}
+    assert f"ledger-{t_short['trade_id']}-tatamotors-stop" in rule_ids
+    assert f"ledger-{t_short['trade_id']}-tatamotors-target" in rule_ids
+    assert f"ledger-{t_short['trade_id']}-tatamotors-flat" in rule_ids
+    assert f"ledger-{t_long['trade_id']}-bankbaroda-flat" not in rule_ids  # EQ_DELIVERY has no intraday flatten bell
+    assert {"nse-open-bell", "nse-or-complete", "nse-hazard-lock", "nse-flatten-warning"}.issubset(rule_ids)
+
+    # 3. Offline quotes: TATAMOTORS rallies above short stop (815 >= 812); BANKBARODA hits long target (276 >= 275)
+    q_dir = tmp_path / "quotes_off"
+    q_dir.mkdir()
+    (q_dir / "yahoo-TATAMOTORS.NS.json").write_text(
+        json.dumps(_make_daily_chart_payload("TATAMOTORS.NS", [800.0, 815.0])),
+        encoding="utf-8",
+    )
+    (q_dir / "yahoo-BANKBARODA.NS.json").write_text(
+        json.dumps(_make_daily_chart_payload("BANKBARODA.NS", [247.0, 276.0])),
+        encoding="utf-8",
+    )
+
+    rc_chk1 = nse_alerts.main(
+        [
+            "check",
+            "--state-dir", str(tmp_path),
+            "--offline", str(q_dir),
+            "--now", "2026-11-11 15:12",
+            "--json",
+        ]
+    )
+    assert rc_chk1 == 0
+    chk_out = json.loads(capsys.readouterr().out)
+    rang_ids = {r["id"] for r in chk_out["rings"]}
+    assert f"ledger-{t_short['trade_id']}-tatamotors-stop" in rang_ids
+    assert f"ledger-{t_short['trade_id']}-tatamotors-flat" in rang_ids
+    assert f"ledger-{t_long['trade_id']}-bankbaroda-target" in rang_ids
+    assert "nse-flatten-warning" in rang_ids
+    assert (tmp_path / "prices.json").exists()
+
+    # Immediate re-check is quiet (exit 1) because price & today bells already rang
+    rc_chk2 = nse_alerts.main(
+        [
+            "check",
+            "--state-dir", str(tmp_path),
+            "--offline", str(q_dir),
+            "--now", "2026-11-11 15:13",
+            "--json",
+        ]
+    )
+    assert rc_chk2 == 1
+    capsys.readouterr()
+
+    # 4. Closing short trade removes its ledger alerts on next sync
+    mb_close_paper_trade(t_short["trade_id"], exit_price=815.0, reason="STOP", now_str="2026-11-11 15:13", state_dir=tmp_path)
+    nse_alerts.main(["add", "--from-ledger", "--state-dir", str(tmp_path)])
+    capsys.readouterr()
+    rules_after = {r["id"] for r in json.loads((tmp_path / "alerts.json").read_text(encoding="utf-8"))["rules"]}
+    assert f"ledger-{t_short['trade_id']}-tatamotors-stop" not in rules_after
+    assert f"ledger-{t_long['trade_id']}-bankbaroda-target" in rules_after
+
+    # 5. Re-arm test + bounded watch cycle test
+    nse_alerts.main(
+        ["add", "--symbol", "SBIN", "--above", "850", "--rearm", "--state-dir", str(tmp_path)]
+    )
+    capsys.readouterr()
+    (q_dir / "yahoo-SBIN.NS.json").write_text(
+        json.dumps(_make_daily_chart_payload("SBIN.NS", [840.0, 855.0])),
+        encoding="utf-8",
+    )
+    rc_w = nse_alerts.main(
+        [
+            "watch",
+            "--max-cycles", "2",
+            "--interval", "0",
+            "--state-dir", str(tmp_path),
+            "--offline", str(q_dir),
+            "--now", "2026-11-11 10:30",
+            "--json",
+        ]
+    )
+    assert rc_w == 0
+    lines = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
+    assert len(lines) == 2
+    assert any(r["symbol"] == "SBIN" for r in lines[0]["rings"])
+    assert not any(r["symbol"] == "SBIN" for r in lines[1]["rings"])
+
+    # Pullback below 850 clears rung state because --rearm was set
+    (q_dir / "yahoo-SBIN.NS.json").write_text(
+        json.dumps(_make_daily_chart_payload("SBIN.NS", [845.0, 848.0])),
+        encoding="utf-8",
+    )
+    assert nse_alerts.main(
+        ["check", "--state-dir", str(tmp_path), "--offline", str(q_dir), "--now", "2026-11-11 11:00"]
+    ) == 1
+    capsys.readouterr()
+    st_after_pullback = json.loads((tmp_path / "alerts_state.json").read_text(encoding="utf-8"))
+    assert "sbin-above-850" not in st_after_pullback["rung"]
+
+
+def test_cli_wrappers_holiday_suppression_and_scanner_exit_codes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # 1. Alert holiday suppression: opening_bell + time do NOT fire on Diwali holiday (2026-11-10)
+    assert nse_alerts.main(["add", "--opening-bell", "--state-dir", str(tmp_path)]) == 0
+    assert nse_alerts.main(["add", "--ist-bell", "--state-dir", str(tmp_path)]) == 0
+    capsys.readouterr()
+
+    rc_hol = nse_alerts.main(["check", "--state-dir", str(tmp_path), "--now", "2026-11-10 10:15", "--json"])
+    assert rc_hol == 1
+    hol_out = json.loads(capsys.readouterr().out)
+    assert hol_out["rings"] == []
+    assert hol_out["market"]["phase"] == "CLOSED_HOLIDAY"
+
+    # list, remove, reset CLI paths
+    assert nse_alerts.main(["list", "--state-dir", str(tmp_path), "--json"]) == 0
+    capsys.readouterr()
+    assert nse_alerts.main(["remove", "nse-opening-bell", "--state-dir", str(tmp_path)]) == 0
+    capsys.readouterr()
+
+    # 2. nse_news --market offline + no-ticker error path
+    off_n = tmp_path / "mkt_news"
+    off_n.mkdir()
+    (off_n / "livemint-markets.xml").write_text(
+        "<rss version='2.0'><channel><item>"
+        "<title>Nifty 50 hits fresh record as RBI holds repo rate steady</title>"
+        "<link>https://example.com/lm-1</link>"
+        "<pubDate>Wed, 11 Nov 2026 07:30:00 GMT</pubDate>"
+        "</item></channel></rss>",
+        encoding="utf-8",
+    )
+    assert nse_news.main(
+        ["--market", "--now", "2026-11-11 10:00", "--state-dir", str(tmp_path), "--offline", str(off_n), "--json"]
+    ) == 0
+    mkt_out = json.loads(capsys.readouterr().out)
+    assert len(mkt_out["market_headlines"]) == 1
+
+    # Calling nse_news with empty state dir and no --tickers/--market exits cleanly with 1
+    empty_dir = tmp_path / "empty_state"
+    empty_dir.mkdir()
+    assert nse_news.main(["--state-dir", str(empty_dir), "--offline", str(off_n)]) == 1
+    capsys.readouterr()
+
+    # 3. Scanner CLI exit codes: 1 when 0 hits match, 0 when hit matches
+    off_sc = tmp_path / "sc_cli"
+    off_sc.mkdir()
+    flat_closes = [150.0 for _ in range(25)]
+    (off_sc / "FLAT.NS.json").write_text(
+        json.dumps(_make_daily_chart_payload("FLAT.NS", flat_closes)),
+        encoding="utf-8",
+    )
+    rc_empty = nse_scanner.main(
+        [
+            "daily",
+            "--symbols", "FLAT",
+            "--setup", "breakout_20d",
+            "--now", "2026-11-11 16:00",
+            "--state-dir", str(tmp_path),
+            "--offline", str(off_sc),
+            "--json",
+        ]
+    )
+    assert rc_empty == 1
+    capsys.readouterr()
+
+    # 4. Regression: Yahoo range=5d sets chartPreviousClose to 5 trading days ago, not yesterday
+    stale_5d = _make_daily_chart_payload("BANKBARODA.NS", [245.35, 250.0, 255.0, 260.0, 275.0])
+    stale_5d["chart"]["result"][0]["meta"]["chartPreviousClose"] = 245.35
+    q_stale = nse_alerts.parse_yahoo_quote(json.dumps(stale_5d), "BANKBARODA.NS", "BANKBARODA")
+    assert q_stale["prev_close"] == 260.0
+    assert q_stale["pct_change"] == 5.77
+
+    stale_dir = tmp_path / "stale_5d_news"
+    stale_dir.mkdir()
+    (stale_dir / "chart-BANKBARODA.NS.json").write_text(json.dumps(stale_5d), encoding="utf-8")
+    mv_stale = nse_news.fetch_move_context(
+        {"base": "BANKBARODA", "yahoo": "BANKBARODA.NS"},
+        move_alert_pct=3.0,
+        offline_dir=stale_dir,
+    )
+    assert mv_stale["prev_close"] == 260.0
+    assert mv_stale["pct_change"] == 5.77
+
+
+def test_nse_ui_formatting_ansi_and_ascii_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert nse_ui.format_inr(125000) == "Rs. 1,25,000.00"
+    assert nse_ui.format_inr(10000000, signed=True) == "+Rs. 1,00,00,000.00"
+    assert nse_ui.format_inr(-450.5) == "-Rs. 450.50"
+    assert nse_ui.format_inr(None) == "N/A"
+    assert nse_ui.format_pct(2.5) == "+2.50%"
+    assert nse_ui.format_pct(None) == "N/A"
+
+    colored = "\x1b[92mRELIANCE\x1b[0m"
+    assert nse_ui.vis_len(colored) == 8
+    assert nse_ui.strip_ansi(colored) == "RELIANCE"
+    padded = nse_ui.pad_vis(colored, 12, "right")
+    assert nse_ui.vis_len(padded) == 12
+    assert padded.startswith("    ")
+
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    assert nse_ui.supports_color() is False
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    assert nse_ui.supports_color() is True
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+
+    ui = nse_ui.UI(color=False, unicode_box=False, width=80)
+    banner = ui.banner("ASCII TEST", subtitle="Short subtitle", badge="PASS", badge_tone="pass")
+    assert banner.startswith("+")
+    assert "[PASS]" in banner
+    tbl = ui.table(
+        headers=["Symbol", "Levels", "Guide"],
+        rows=[["RELIANCE", "H 1320.00\nL 1305.00", "This is a longer beginner explanation that wraps nicely."]],
+        nowrap_cols={0, 1},
+    )
+    for line in (banner + "\n" + tbl).splitlines():
+        assert len(line) <= 80
+    assert "H 1320.00" in tbl
+    assert "L 1305.00" in tbl
+    callout = ui.callout("Reminder", ["Check separate SL/GTT in broker app."], tone_name="warn")
+    assert "[!] Reminder" in callout
+
+
+def test_human_cli_outputs_across_scripts(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("NO_COLOR", "1")
+
+    assert mb_main(["brokers"]) == 0
+    out_br = capsys.readouterr().out
+    assert "SUPPORTED INDIAN BROKERS" in out_br
+    assert "angel_one *" in out_br
+    assert "zerodha" in out_br
+
+    scrip_file = tmp_path / "scrip.json"
+    scrip_file.write_text(
+        json.dumps(
+            [
+                {
+                    "token": "2885",
+                    "symbol": "RELIANCE-EQ",
+                    "name": "RELIANCE",
+                    "expiry": "",
+                    "strike": "-1",
+                    "lotsize": "1",
+                    "instrumenttype": "",
+                    "exch_seg": "NSE",
+                    "tick_size": "5.000000",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    assert mb_main(["sync-scrip", "--offline", str(scrip_file), "--state-dir", str(tmp_path)]) == 0
+    assert "SCRIP MASTER SYNCED" in capsys.readouterr().out
+    assert mb_main(["lookup", "--symbol", "RELIANCE", "--exchange", "NSE", "--state-dir", str(tmp_path)]) == 0
+    lk_out = capsys.readouterr().out
+    assert "INSTRUMENT TOKEN LOOKUP" in lk_out
+    assert "Spot Equity" in lk_out
+
+    f_5m = _make_offline_nse_5m(tmp_path / "SBIN.NS-5m.json", num_days=25, base_price=800.0, drift=0.0012)
+    f_1d = _make_offline_daily(tmp_path / "SBIN.NS-1d.json", num_days=220, base_price=700.0)
+
+    assert (
+        nse_data_loader.main(
+            [
+                "--symbol", "SBIN",
+                "--now", "2026-11-09 10:15",
+                "--offline-5m", str(f_5m),
+                "--offline-1d", str(f_1d),
+                "--offline-1wk", str(f_1d),
+            ]
+        )
+        == 0
+    )
+    dl_out = capsys.readouterr().out
+    assert "NSE/BSE MARKET STRUCTURE" in dl_out
+    assert "Beginner Guide" in dl_out
+
+    assert (
+        nse_timemachine.main(
+            [
+                "--symbol", "SBIN.NS",
+                "--entry", "800",
+                "--stop", "794",
+                "--target", "812",
+                "--mode", "INTRADAY",
+                "--entry-time", "09:30",
+                "--replays", "500",
+                "--offline", str(f_5m),
+                "--state-dir", str(tmp_path),
+                "--write",
+            ]
+        )
+        == 0
+    )
+    tm_out = capsys.readouterr().out
+    assert "NSE/BSE TIME MACHINE" in tm_out
+    assert "Outcome Odds" in tm_out
+
+    assert (
+        indian_risk_gate.main(
+            [
+                "--symbol", "SBIN",
+                "--capital", "50000",
+                "--risk-pct", "1.0",
+                "--entry", "800",
+                "--stop", "794",
+                "--target", "812",
+                "--segment", "EQ_INTRADAY",
+                "--timemachine-json", str(tmp_path / "timemachine_result.json"),
+                "--now", "2026-11-09 10:15",
+                "--state-dir", str(tmp_path),
+                "--write",
+            ]
+        )
+        == 0
+    )
+    rg_out = capsys.readouterr().out
+    assert "INDIAN RISK & TAX GATE" in rg_out
+    assert "STT (2026 Rate)" in rg_out
+
+    assert (
+        mb_main(
+            [
+                "stage",
+                "--broker", "zerodha",
+                "--symbol", "SBIN",
+                "--segment", "EQ_INTRADAY",
+                "--entry", "800",
+                "--stop", "794",
+                "--target", "812",
+                "--now", "2026-11-09 10:15",
+                "--state-dir", str(tmp_path),
+                "--paper",
+            ]
+        )
+        == 0
+    )
+    st_out = capsys.readouterr().out
+    assert "PAPER ORDER STAGED" in st_out
+    assert "Non-Bracket Live Orders" in st_out
+
+    assert mb_main(["ledger", "--state-dir", str(tmp_path)]) == 0
+    lg_out = capsys.readouterr().out
+    assert "PAPER TRADING LEDGER" in lg_out
+    assert "OPEN" in lg_out
+
+    assert (
+        mb_main(
+            [
+                "close",
+                "--trade-id", "1",
+                "--exit-price", "812",
+                "--reason", "TARGET",
+                "--now", "2026-11-09 11:30",
+                "--state-dir", str(tmp_path),
+            ]
+        )
+        == 0
+    )
+    cl_out = capsys.readouterr().out
+    assert "PAPER TRADE CLOSED" in cl_out
+
+    # Scanner + News + Alerts human CLI coverage
+    uni_dir = tmp_path / "uni_hum"
+    uni_dir.mkdir()
+    (uni_dir / "ind_nifty50list.csv").write_text(
+        "Company Name,Industry,Symbol,Series,ISIN Code\n"
+        "Break Co,Capital Goods,BREAKCO,EQ,INE000A01001\n",
+        encoding="utf-8",
+    )
+    (uni_dir / "EQUITY_L.csv").write_text(
+        "SYMBOL,NAME OF COMPANY,SERIES,DATE OF LISTING,PAID UP VALUE,MARKET LOT,ISIN NUMBER,FACE VALUE\n"
+        "BREAKCO,Break Co Ltd,EQ,01-JAN-2000,10,1,INE000A01001,10\n",
+        encoding="utf-8",
+    )
+    (uni_dir / "fo_mktlots.csv").write_text("Derivatives\nSr.No,Symbol,NOV-26\n", encoding="utf-8")
+    (uni_dir / "fo_secban.csv").write_text("Securities in Ban For Trade Date 11-NOV-2026\n", encoding="utf-8")
+    breakout_closes = [100.0 + (i % 3) for i in range(25)] + [120.0]
+    (uni_dir / "BREAKCO.NS.json").write_text(
+        json.dumps(_make_daily_chart_payload("BREAKCO.NS", breakout_closes)),
+        encoding="utf-8",
+    )
+
+    assert nse_scanner.main(["universe", "--pool", "nifty50", "--state-dir", str(tmp_path), "--offline", str(uni_dir)]) == 0
+    assert "NSE STOCK UNIVERSE CACHED" in capsys.readouterr().out
+    assert (
+        nse_scanner.main(
+            ["daily", "--pool", "nifty50", "--now", "2026-11-11 16:00", "--state-dir", str(tmp_path), "--offline", str(uni_dir)]
+        )
+        == 0
+    )
+    assert "NSE/BSE MARKET SCANNER [DAILY]" in capsys.readouterr().out
+
+    orb_dir = tmp_path / "orb_hum"
+    orb_dir.mkdir()
+    (orb_dir / "ORBHIT.NS.json").write_text(
+        json.dumps(_make_single_session_5m("ORBHIT.NS", datetime.date(2026, 11, 11))),
+        encoding="utf-8",
+    )
+    assert (
+        nse_scanner.main(
+            ["orb", "--symbols", "ORBHIT", "--now", "2026-11-11 10:30", "--state-dir", str(tmp_path), "--offline", str(orb_dir)]
+        )
+        == 0
+    )
+    assert "NSE/BSE MARKET SCANNER [ORB]" in capsys.readouterr().out
+
+    ndir = tmp_path / "news_hum"
+    ndir.mkdir()
+    (ndir / "livemint-markets.xml").write_text(
+        "<rss version='2.0'><channel><item>"
+        "<title>Nifty 50 hits fresh record as RBI holds repo rate steady</title>"
+        "<link>https://example.com/lm</link>"
+        "<pubDate>Wed, 11 Nov 2026 07:30:00 GMT</pubDate>"
+        "</item></channel></rss>",
+        encoding="utf-8",
+    )
+    assert nse_news.main(["--market", "--now", "2026-11-11 10:00", "--state-dir", str(tmp_path), "--offline", str(ndir)]) == 0
+    assert "NSE/BSE INDIAN NEWS & REGULATORY BRIEFING" in capsys.readouterr().out
+
+    assert nse_alerts.main(["clock", "--now", "2026-11-11 10:15"]) == 0
+    assert "PRIMARY_EXECUTION" in capsys.readouterr().out
+    assert nse_alerts.main(["add", "--ist-bell", "--state-dir", str(tmp_path)]) == 0
+    assert "Added 4 Alert Rule(s)" in capsys.readouterr().out
+    assert nse_alerts.main(["list", "--state-dir", str(tmp_path)]) == 0
+    assert "CONFIGURED NSE / BSE ALERT RULES" in capsys.readouterr().out
+    (ndir / "yahoo-BREAKCO.NS.json").write_text(
+        json.dumps(_make_daily_chart_payload("BREAKCO.NS", [100.0, 120.0])),
+        encoding="utf-8",
+    )
+    assert nse_alerts.main(["quote", "BREAKCO", "--state-dir", str(tmp_path), "--offline", str(ndir), "--now", "2026-11-11 10:15"]) == 0
+    assert "NSE / BSE LIVE QUOTE SNAPSHOT" in capsys.readouterr().out
+    assert nse_alerts.main(["check", "--state-dir", str(tmp_path), "--offline", str(ndir), "--now", "2026-11-11 10:15"]) == 0
+    assert "TRIGGERED ALERTS" in capsys.readouterr().out
+    assert nse_alerts.main(["reset", "--all", "--state-dir", str(tmp_path)]) == 0
+    assert "Re-armed all alert rules" in capsys.readouterr().out
+    assert nse_alerts.main(["remove", "nse-open-bell", "--state-dir", str(tmp_path)]) == 0
+    assert "Removed alert rule" in capsys.readouterr().out
+
+
+
 
 

@@ -36,6 +36,7 @@ from nse_common import (
     round_tick,
     write_json_atomic,
 )
+from nse_ui import UI, format_inr, safe_print
 
 VALID_SEGMENTS = ("EQ_INTRADAY", "EQ_DELIVERY", "FNO_FUT", "FNO_OPT")
 
@@ -453,23 +454,196 @@ def evaluate_risk_gate(
     return result
 
 
-def format_human_verdict(res: dict[str, Any]) -> str:
+def format_human_verdict(res: dict[str, Any], color: bool | None = None) -> str:
+    ui = UI(color=color)
     ch = res["charges_at_target"]
-    lines = [
-        f"=== Indian Risk & Tax Gate: {res['verdict']} (broker={res.get('broker', 'standard')}, fingerprint={res['fingerprint']}) ===",
-        f"Trade        : {res['side'].upper()} {res['qty']} x {res['symbol']} ({res['segment']}, {res['lots']} lots @ lot={res['lot_size']})",
-        f"Prices       : Entry=Rs.{res['entry']:.2f} | Stop=Rs.{res['stop']:.2f} | Target=Rs.{res['target']:.2f} | Breakeven=Rs.{res['breakeven_price_inr']:.2f} (+Rs.{res['breakeven_move_inr']:.2f}/unit)",
-        f"Capital/Margin: Notional=Rs.{res['notional_value_inr']:,.2f} | Margin Req ({res['leverage_used']}x)=Rs.{res['margin_required_inr']:,.2f} | Max Risk Budget=Rs.{res['max_risk_allowed_inr']:,.2f}",
-        f"P&L & R:R    : Gross Target=+Rs.{res['gross_profit_at_target_inr']:,.2f} -> Net Target=+Rs.{res['net_profit_at_target_inr']:,.2f} | Net Stop Loss=-Rs.{res['net_loss_at_stop_inr']:,.2f}",
-        f"Ratio & Drag : Gross R:R={res['gross_rr']:.2f} -> Net R:R={res['net_rr']:.2f} | Statutory Tax Drag={res['tax_drag_pct_of_gross']:.2f}% (Total Charges=Rs.{ch['total_charges']:.2f})",
-        f"Fee Breakdown: Brokerage={ch['brokerage']:.2f} | STT={ch['stt']:.2f} | NSE Txn={ch['exchange_txn']:.2f} | SEBI={ch['sebi_fee']:.2f} | Stamp={ch['stamp_duty']:.2f} | DP={ch['dp_charge']:.2f} | GST={ch['gst']:.2f}",
-        f"IST Session  : {res['session']['ist_timestamp']} ({res['session']['phase']})",
+    verdict = str(res["verdict"]).upper()
+    v_tone = "pass" if verdict == "PASS" else "block"
+    sess = res.get("session") or {}
+    ds = res.get("daily_state") or {}
+    ts_short = str(sess.get("ist_timestamp", "")).replace("T", " ")[:19] + " IST"
+
+    qty_desc = (
+        f"{res['side'].upper()} {res['qty']} shares"
+        if int(res.get("lot_size", 1)) <= 1
+        else f"{res['side'].upper()} {res['qty']} qty ({res['lots']} lots x {res['lot_size']})"
+    )
+
+    blocks: list[str] = [
+        ui.banner(
+            title=f"INDIAN RISK & TAX GATE  {ui.dot_ch}  {res['symbol']} ({res['segment']})",
+            subtitle=f"Broker: {res.get('broker', 'standard')}  |  {ts_short} ({sess.get('phase', 'N/A')})  |  ID: {res['fingerprint']}",
+            badge=verdict,
+            badge_tone=v_tone,
+            meta_lines=[
+                f"Position: {ui.bold(qty_desc)}   |   Max Allowed Risk: {ui.bold(format_inr(res['max_risk_allowed_inr']))} ({res['risk_pct']:.2f}% of capital)",
+            ],
+        )
     ]
+
+    # Table 1: Position Sizing & Capital
+    stop_num = f"{float(res['stop']):,.2f}"
+    targ_num = f"{float(res['target']):,.2f}"
+    pos_rows = [
+        [
+            "Action & Quantity",
+            ui.tone(qty_desc, "good" if res["side"] == "buy" else "bad", bold=True),
+            "Auto-sized so even a stop-loss + taxes stays inside your risk budget.",
+        ],
+        [
+            "Entry / Stop / Target",
+            f"{format_inr(res['entry'])} / {ui.red(stop_num)} / {ui.green(targ_num)}",
+            "Planned Entry, Stop-Loss & Target prices (Rs. 0.05 tick grid).",
+        ],
+        [
+            "Tax Breakeven Price",
+            f"{format_inr(res['breakeven_price_inr'])} (+{format_inr(res['breakeven_move_inr'])}/unit)",
+            "Price must move past this just to cover brokerage & Indian taxes.",
+        ],
+        [
+            "Notional Value",
+            format_inr(res["notional_value_inr"]),
+            "Total market value of shares/contracts controlled.",
+        ],
+        [
+            f"Margin Required ({res['leverage_used']}x)",
+            ui.bold(format_inr(res["margin_required_inr"])),
+            "Cash blocked in your broker account for this trade.",
+        ],
+    ]
+    blocks.append("")
+    blocks.append(ui.section("1. Exact Position Size & Capital Required"))
+    blocks.append(
+        ui.table(
+            headers=["Parameter", "Value", "Beginner Explanation"],
+            rows=pos_rows,
+            alignments=["left", "left", "left"],
+            nowrap_cols={0, 1},
+        )
+    )
+
+    # Table 2: Gross vs Net P&L and R:R
+    net_rr = float(res["net_rr"])
+    rr_ok = net_rr >= 1.5
+    pnl_rows = [
+        [
+            "Target Hit (Profit)",
+            ui.green(format_inr(res["gross_profit_at_target_inr"], signed=True)),
+            ui.red(f"-{format_inr(ch['total_charges'])}"),
+            ui.green(format_inr(res["net_profit_at_target_inr"], signed=True), bold=True),
+        ],
+        [
+            "Stop-Loss Hit (Loss)",
+            ui.red(format_inr(-abs(float(res.get("gross_loss_at_stop_inr", 0.0))), signed=True)),
+            ui.red(f"-{format_inr(res['charges_at_stop']['total_charges'])}"),
+            ui.red(format_inr(-abs(float(res["net_loss_at_stop_inr"])), signed=True), bold=True),
+        ],
+    ]
+    blocks.append("")
+    blocks.append(ui.section("2. Profit, Loss & Tax-Adjusted Risk-to-Reward"))
+    blocks.append(
+        ui.table(
+            headers=["Scenario", "Gross P&L", "Broker + Taxes", "Net P&L (In Pocket)"],
+            rows=pnl_rows,
+            alignments=["left", "right", "right", "right"],
+            footer=(
+                f"Gross R:R = {res['gross_rr']:.2f}  ->  Net R:R = {net_rr:.2f} "
+                f"({'OK >= 1.50' if rr_ok else 'TOO LOW < 1.50'})  |  Tax Drag = {res['tax_drag_pct_of_gross']:.2f}% of gross profit"
+            ),
+        )
+    )
+
+    # Table 3: Fee Breakdown
+    total_ch = max(float(ch["total_charges"]), 0.01)
+    fee_items = [
+        ("Brokerage", float(ch["brokerage"]), "Fee charged by your broker (buy + sell)."),
+        ("STT (2026 Rate)", float(ch["stt"]), "Securities Transaction Tax paid to Govt of India."),
+        ("NSE Exchange Txn", float(ch["exchange_txn"]), "NSE/BSE exchange turnover fee."),
+        ("SEBI Turnover Fee", float(ch["sebi_fee"]), "SEBI regulatory fee (Rs. 10 per Crore)."),
+        ("Stamp Duty", float(ch["stamp_duty"]), "State stamp duty charged on the buy side."),
+        ("DP Charge", float(ch["dp_charge"]), "Depository charge when selling delivery shares."),
+        ("GST (18%)", float(ch["gst"]), "18% GST on brokerage + exchange + SEBI fees."),
+    ]
+    fee_rows = [
+        [
+            name,
+            format_inr(amt),
+            f"{(amt / total_ch) * 100.0:5.1f}%",
+            note,
+        ]
+        for name, amt, note in fee_items
+        if amt > 0 or name in ("Brokerage", "STT (2026 Rate)", "GST (18%)")
+    ]
+    fee_rows.append(
+        [
+            ui.bold("TOTAL CHARGES (At Target)"),
+            ui.bold(format_inr(ch["total_charges"])),
+            ui.bold("100.0%"),
+            "Round-trip cost deducted automatically from P&L.",
+        ]
+    )
+    blocks.append("")
+    blocks.append(ui.section("3. Indian Tax & Brokerage Breakdown (2026 Schedule)"))
+    blocks.append(
+        ui.table(
+            headers=["Charge Line Item", "Amount (INR)", "Share", "What It Is"],
+            rows=fee_rows,
+            alignments=["left", "right", "right", "left"],
+        )
+    )
+
+    # Table 4: Daily Risk Budget
+    dd_lim = float(ds.get("daily_drawdown_limit_inr") or 0.0)
+    used_risk = max(0.0, -min(0.0, float(ds.get("realized_pnl_inr") or 0.0)) + float(ds.get("open_risk_inr") or 0.0))
+    dd_bar = ui.bar(used_risk, dd_lim if dd_lim > 0 else 1.0, width=10, tone_name="warn" if used_risk < dd_lim else "bad")
+    blocks.append("")
+    blocks.append(ui.section("4. Daily Account Guardrails (Paper Ledger Synced)"))
+    blocks.append(
+        ui.table(
+            headers=["Trades Today", "Today Realized P&L", "Open Risk", "Daily DD Limit", "Budget Used"],
+            rows=[
+                [
+                    str(ds.get("trades_today", 0)),
+                    ui.pnl_inr(ds.get("realized_pnl_inr", 0.0)),
+                    format_inr(ds.get("open_risk_inr", 0.0)),
+                    format_inr(dd_lim),
+                    f"[{dd_bar}] {format_inr(used_risk)}",
+                ]
+            ],
+            alignments=["center", "right", "right", "right", "left"],
+            nowrap_cols={0, 1, 2, 3, 4},
+        )
+    )
+
     if res["warnings"]:
-        lines.append("Warnings     : " + " ; ".join(res["warnings"]))
+        blocks.append("")
+        blocks.append(ui.callout("Risk Gate Warnings", res["warnings"], tone_name="warn"))
     if res["blocks"]:
-        lines.append("BLOCK Reasons: " + " ; ".join(res["blocks"]))
-    return "\n".join(lines)
+        blocks.append("")
+        blocks.append(
+            ui.callout(
+                "BLOCKED - DO NOT TRADE",
+                [
+                    *res["blocks"],
+                    "Rule: Never override a BLOCK verdict. Fix the setup or skip today.",
+                ],
+                tone_name="bad",
+            )
+        )
+    elif verdict == "PASS":
+        blocks.append("")
+        blocks.append(
+            ui.callout(
+                "Approved - Next Step",
+                [
+                    f"Gate PASSED (Fingerprint: {res['fingerprint']}).",
+                    "Stage a risk-free paper order: python scripts/broker_bridge.py stage --risk-json state/risk_verdict.json --paper",
+                ],
+                tone_name="good",
+            )
+        )
+
+    return "\n".join(blocks)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -554,7 +728,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps(res, indent=2))
     else:
-        print(format_human_verdict(res))
+        safe_print(format_human_verdict(res))
     return 0 if res["verdict"] == "PASS" else 1
 
 

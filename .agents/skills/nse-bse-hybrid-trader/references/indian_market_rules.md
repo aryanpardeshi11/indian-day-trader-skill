@@ -84,3 +84,22 @@ All statutory levies + per-broker fee overrides are enforced deterministically i
 | `kotak_neo` | `<base>/quick/order/rule/ms/place` (`form jData`) | `MIS` (`L`/`MKT`) | `CNC` | `NRML` | Optional (`--offline` CSV/JSON) | `KOTAK_ACCESS_TOKEN`, `KOTAK_SID`, `KOTAK_BASE_URL` |
 | `icici_breeze` | `api.icicidirect.com/breezeapi/api/v1/order` (`json` + `X-Checksum`) | `margin` | `cash` | `futures` / `options` | Optional (`--offline` CSV/JSON) | `ICICI_API_KEY`, `ICICI_SECRET_KEY`, `ICICI_SESSION_TOKEN` |
 | `shoonya` | `api.shoonya.com/NorenWClientAPI/PlaceOrder` (`form jData+jKey`) | `I` (`LMT`/`MKT`) | `C` | `M` | Optional (`--offline` CSV/JSON) | `SHOONYA_USER_ID`, `SHOONYA_SESSION_TOKEN` |
+
+---
+
+## 5. Free Indian Feeds, Series Filtering (`BE`/`BZ`) & Scanner Hygiene
+
+1. **Equity Series Filtering (`EQUITY_L.csv`):**
+   - `EQ`: Standard rolling-settlement equities eligible for intraday `MIS`/`BO` and delivery `CNC`.
+   - `BE` / `BZ`: Trade-to-Trade (T2T) or surveillance-restricted series requiring 100% delivery settled gross (no
+     intraday squaring off). `nse_scanner.py` excludes `BE` and `BZ` by default unless `--include-t2t` is passed.
+2. **Verified Free Indian Data Sources (`config/trading_rules.json` `"feeds"`):**
+   - **Universe & Exchange Lists:** NiftyIndices constituent CSVs (`ind_nifty50list.csv`, `ind_nifty200list.csv`,
+     `ind_nifty500list.csv`) and NSE Archives CSVs (`EQUITY_L.csv`, `fo_mktlots.csv`, `fo_secban.csv`). Direct
+     `nseindia.com/api/*` and `api.bseindia.com` JSON endpoints block headless clients with HTTP 403, so the scanner and
+     news monitor avoid them in favor of static archive CSVs and public RSS feeds.
+   - **News & Regulatory RSS (`nse_news.py`):** Google News India (`hl=en-IN&gl=IN&ceid=IN:en`), Economic Times Stocks
+     RSS, LiveMint Markets RSS, SEBI RSS (`sebirss.xml`), RBI Press Releases RSS (`pressreleases_rss.xml`), and BSE
+     Notices RSS (`notices.xml`). Yahoo Finance RSS returns empty results for `.NS` tickers and is therefore bypassed.
+   - **Market Data (`nse_scanner.py` & `nse_alerts.py`):** Two-stage Yahoo Finance v8 (`spark` batch close screen of 20
+     symbols per request -> parallel `v8/finance/chart` OHLCV, INR Cr turnover, RVOL, ATR, and Anchored VWAP).

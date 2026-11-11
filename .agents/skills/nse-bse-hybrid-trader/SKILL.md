@@ -47,19 +47,44 @@ python .agents/skills/nse-bse-hybrid-trader/scripts/broker_bridge.py brokers
 - Indian regulatory rules & multi-broker API/product matrix:
   [indian_market_rules.md](./references/indian_market_rules.md)
 
-## Core 5-Step Operational Pipeline
+## Core 5-Step Operational Pipeline (+ Optional Discovery & Post-Entry Alerts)
 
 Never rely on mental math for position sizing, tax drag, or probability estimation. Run this sequence from
-`.agents/skills/nse-bse-hybrid-trader/` (or pass the script paths from workspace root):
+`.agents/skills/nse-bse-hybrid-trader/` (or pass the script paths from workspace root).
+
+- **Display vs Pipeline Mode:** Omitting `--json` renders colored Unicode/ASCII terminal tables, visual progress bars,
+  Indian INR lakh/crore formatting, and plain-English beginner guides via [nse_ui.py](./scripts/nse_ui.py). Keep
+  `--json` when piping structured data between steps.
+
+### Optional Step 0: Universe Screening & News Catalyst Briefing
+
+Use [nse_scanner.py](./scripts/nse_scanner.py) and [nse_news.py](./scripts/nse_news.py) when discovering setups
+across NSE indices (`nifty50`, `nifty200`, `nifty500`, `fno`, `all_eq`) or auditing headlines/regulatory notices before
+entering a trade:
+
+```bash
+# Scan NIFTY 50 daily swing setups (auto-filters Trade-to-Trade BE/BZ scrips & checks F&O ban)
+python .agents/skills/nse-bse-hybrid-trader/scripts/nse_scanner.py daily --pool nifty50 --setup all --min-turnover-cr 20
+
+# Intraday 15m Opening Range Breakout + Anchored VWAP scan (run after 09:30 IST)
+python .agents/skills/nse-bse-hybrid-trader/scripts/nse_scanner.py orb --pool nifty50
+
+# Check Indian news, earnings, SEBI/RBI/BSE regulatory RSS & NSE F&O ban list
+python .agents/skills/nse-bse-hybrid-trader/scripts/nse_news.py --tickers "<TICKER>" --all --hours 72
+```
+
+- **Headlines are leads, not facts:** Treat `nse_news.py` output as warning flags; verify material corporate filings,
+  results, and regulatory circulars directly before trading.
 
 ### Step 1 & 2: Indian Market Structure & Multi-Timeframe Confluence
 
 Run [nse_data_loader.py](./scripts/nse_data_loader.py) to fetch live NSE/BSE `5m`, `1d`, and `1wk` data and compute EMA
 20/50/200, PDH/PDL/PDC, 15m Opening Range (`ORH`/`ORL`), Anchored Intraday VWAP, RSI(14) + divergences, MACD, ADX,
-Bollinger Bands, ATR(14), Fibonacci retracements/extensions, RVOL, and a 0-6 Confluence Score:
+Bollinger Bands, ATR(14), Fibonacci retracements/extensions, RVOL, and a 0-6 Confluence Score (pass `--with-news` to
+include Indian RSS news & automatic NSE `fo_secban.csv` F&O ban detection):
 
 ```bash
-python .agents/skills/nse-bse-hybrid-trader/scripts/nse_data_loader.py --symbol "<TICKER>" --json
+python .agents/skills/nse-bse-hybrid-trader/scripts/nse_data_loader.py --symbol "<TICKER>" --with-news --json
 ```
 
 Apply the guardrails in [indian_market_rules.md](./references/indian_market_rules.md) and frameworks in
@@ -130,19 +155,31 @@ Only after Steps 3 and 4 return `PASS`:
    confirmation passing `--live --confirm "CONFIRM LIVE"`.
    - [smartapi_bridge.py](./scripts/smartapi_bridge.py) remains a full backward-compatible alias defaulting to
      `angel_one`.
+4. **Post-Entry IST Bells, Price Alerts & Live Watch ([nse_alerts.py](./scripts/nse_alerts.py)):** After staging a
+   paper trade or placing a non-bracket live order (whose attached SL/target were stripped on entry), sync alerts from
+   `state/paper_trades.db` + IST session bells (`09:15`, `09:30`, `14:30`, `15:10`) and run `check` or `watch`:
+
+   ```bash
+   python .agents/skills/nse-bse-hybrid-trader/scripts/nse_alerts.py add --from-ledger --ist-bell
+   python .agents/skills/nse-bse-hybrid-trader/scripts/nse_alerts.py watch --interval 30 --until 15:15 --beep
+   ```
 
 ## Required Output Format
 
-Always present final trade analyses in this 4-block structure:
+Always present final trade analyses in a clean, beginner-friendly visual layout (short scannable Markdown **tables**,
+status badges like `[PASS]` / `[BLOCK]` / `[NO-TRADE]`, confluence meter like `4/6 [████░░]`, Indian `Rs.` formatting,
+and 1-line plain-English explanations next to jargon like ORH/ORL, VWAP, Tax Breakeven, and Net R:R — avoid dense walls
+of plain text) organized into these 4 blocks:
 
-1. **Market & Regulatory Context:** Ticker, Broker, Segment, IST Phase, Circuit/ASM/F&O Ban status, HTF Bias, RVOL &
-   Delivery % notes.
-2. **Technical Setup Matrix:** Entry, Stop-Loss, Target 1, Target 2 (Rs. 0.05 tick aligned), Confluence Score (`X/6`),
-   and exact triggers (VWAP, 15m ORH/ORL, Fib pocket, RSI Divergence, PDH/PDL).
-3. **Time Machine & Tax-Adjusted Risk Gate:** Position Size (Shares/Lots), Margin Required, Broker Fee + Statutory
-   Charges & Breakeven Move (INR), Net R:R after taxes, Monte Carlo Target-First % & Net EV, and Gate Verdict (`PASS` /
-   `BLOCK`).
-4. **Actionable Execution Ticket:** Ready-to-run `broker_bridge.py` CLI command and broker-native JSON/form payload.
+1. **Market & Regulatory Context:** Summary table with Ticker, Broker, Segment, IST Phase, LTP vs PDC, Circuit/ASM/F&O
+   Ban status, News/Catalyst leads, HTF Bias, RVOL & Delivery % (plus a 1-line plain-English takeaway).
+2. **Technical Setup Matrix:** Coordinates table with Side, Entry, Stop-Loss, Target 1, Target 2 (`Rs. 0.05` tick
+   aligned), Risk/Share, Confluence Score (`X/6`), and exact triggers (VWAP, 15m ORH/ORL, Fib pocket, RSI Divergence).
+3. **Time Machine & Tax-Adjusted Risk Gate:** Clear sizing & edge table with Position Size (Shares/Lots), Margin
+   Required, Broker Fee + 2026 Statutory Charges & Tax Breakeven Move (INR), Gross vs Net R:R, Monte Carlo Target-First
+   % & Net EV, and an unmistakable Verdict (`PASS` / `BLOCK` / `NO-TRADE`).
+4. **Actionable Execution Ticket:** Clean ready-to-run `broker_bridge.py` CLI command (`--paper` default), broker-native
+   payload, non-bracket SL/GTT reminder when applicable, and optional `nse_alerts.py` stop/target/15:10 IST setup.
 
 ## What It Never Does
 
