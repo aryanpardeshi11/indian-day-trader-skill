@@ -1,4 +1,23 @@
-# Indian Day Trader Skill (`nse-bse-hybrid-trader`)
+`	ext
+[menu.py] / [run_all.py] / [trade.ps1]
+        │
+        ├──> [nse_alerts.py clock]     (IST Market Clock & Session Phase)
+        ├──> [nse_news.py]             (Google News IN, ET/LiveMint, SEBI, RBI, BSE Notices & NSE F&O Ban)
+        ├──> [tv_indicators.py]        (TradingView Cloud Scanner: 32+ Indicators with 0% Local CPU Load)
+        ├──> [nse_data_loader.py]      (Multi-Timeframe Confluence, VWAP, 15m ORH/ORL, Delivery %)
+        ├──> [nse_timemachine.py]      (10,000-Path Monte Carlo Probabilistic Simulation)
+        ├──> [indian_risk_gate.py]     (April 2026 STT/GST/SEBI/Stamp Duty Sizing & Circuit Breakers)
+        ├──> [broker_bridge.py]        (Multi-Broker Staging: Zerodha, Angel One, Upstox, Dhan, Groww, etc.)
+        └──> [nse_alerts.py watch]     (Live Quotes, Target/Stop Alerts & 15:10 IST Auto-Squareoff Warning)
+`
+
+### Master Launchers & Interactive Terminal Menu
+
+- **Interactive Menu (menu.py):** Run python menu.py to interactively select skills, view the 32+ TradingView indicators catalog with plain-English beginner interpretation, and execute individual scripts or full pipelines.
+- **Cross-Platform CLI Runner (
+un_all.py):** Run python run_all.py SUZLON to execute all 8 pipeline steps sequentially (with auto-derived swing coordinates if not specified).
+- **PowerShell Full Pipeline (	rade.ps1):** Run .\trade.ps1 SUZLON -Entry 54.81 -Stop 50.0 -Target 62.0 in PowerShell.
+- **Mandatory SEBI Regulatory Disclaimer:** Every tool and report concludes with an educational disclaimer notice.# Indian Day Trader Skill (`nse-bse-hybrid-trader`)
 
 An AI agent skill for Indian NSE & BSE intraday, swing, and F&O traders. Combines Indian multi-timeframe technical
 intelligence with a zero-dependency Python 3.10+ execution engine: 10,000-path Monte Carlo Time Machine replays,

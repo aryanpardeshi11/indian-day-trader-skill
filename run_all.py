@@ -98,7 +98,7 @@ def run_all(
         print_step_header(1, f"Financial & Regulatory News ({norm_symbol})")
         try:
             import nse_news
-            news_argv = ["--symbol", norm_symbol, "--hours", "72"]
+            news_argv = ["--tickers", norm_symbol, "--hours", "72"]
             if now:
                 news_argv.extend(["--now", now])
             nse_news.main(news_argv)
@@ -139,6 +139,24 @@ def run_all(
     # STEP 4 - Monte Carlo Time Machine
     print_step_header(4, f"Time Machine: {replays:,}-Path Monte Carlo Simulation")
     tm_result_path = None
+    if not has_coords:
+        # Auto-derive default baseline swing coordinates around LTP
+        try:
+            import nse_alerts
+            quotes_res, _ = nse_alerts.fetch_quotes_batch([full_symbol])
+            curr_price = None
+            if quotes_res and norm_symbol in quotes_res:
+                curr_price = quotes_res[norm_symbol].get("price")
+            if curr_price and curr_price > 0:
+                calc_entry = round(curr_price, 2)
+                calc_stop = round(curr_price * 0.95, 2)
+                calc_target = round(curr_price * 1.10, 2)
+                safe_print(ui.cyan(f"  [Auto-Coordinates from LTP Rs.{calc_entry}: Entry={calc_entry}, Stop={calc_stop} (-5%), Target={calc_target} (+10%)]"))
+                entry, stop, target = calc_entry, calc_stop, calc_target
+                has_coords = True
+        except Exception:
+            pass
+
     if has_coords:
         try:
             import nse_timemachine
