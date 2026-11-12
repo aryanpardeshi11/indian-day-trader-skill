@@ -151,7 +151,19 @@ if ($SkipNews) {
     else { Show-Done "News briefing complete" }
 }
 
-# STEP 2 - Market Structure & Multi-Timeframe Technical Analysis
+# STEP 2 - TradingView Cloud Technical Indicators (32+ Indicators, 0% CPU Load)
+Show-Step 2 "TradingView Cloud Scanner: RSI, MACD, Stoch, ADX, Ichimoku, Pivot Points" "Cyan"
+python "$SKILL\tv_indicators.py" `
+    --symbol $Symbol `
+    --exchange $Exchange
+
+if ($LASTEXITCODE -ne 0) {
+    Show-Err "TradingView cloud scanner failed (check internet). Continuing with local analysis..."
+} else {
+    Show-Done "TradingView cloud technical analysis complete"
+}
+
+# STEP 3 - Local Market Structure & Multi-Timeframe Confluence
 Show-Step 2 "Market Structure: EMAs / VWAP / RSI / MACD / ATR / Confluence" "Cyan"
 python "$SKILL\nse_data_loader.py" `
     --symbol   $Symbol `
@@ -169,8 +181,8 @@ if ($LASTEXITCODE -ne 0) {
     Show-Done "Market structure analysis complete"
 }
 
-# STEP 3 - Time Machine: 10,000-Path Monte Carlo
-Show-Step 3 "Time Machine -- $Replays-Path Monte Carlo ($Mode)" "Cyan"
+# STEP 4 - Time Machine: 10,000-Path Monte Carlo
+Show-Step 4 "Time Machine -- $Replays-Path Monte Carlo ($Mode)" "Cyan"
 if ($SkipTimeMachine) {
     Show-Skip "Time Machine skipped. Remove -SkipTimeMachine to run."
 } elseif (-not $hasCoords) {
@@ -202,8 +214,8 @@ if ($SkipTimeMachine) {
     }
 }
 
-# STEP 4 - Indian Risk & Tax Gate
-Show-Step 4 "Indian Risk Gate, Tax Sizing & 2026 Statutory Charges" "Cyan"
+# STEP 5 - Indian Risk & Tax Gate
+Show-Step 5 "Indian Risk Gate, Tax Sizing & 2026 Statutory Charges" "Cyan"
 if ($SkipRiskGate) {
     Show-Skip "Risk Gate skipped. Remove -SkipRiskGate to run."
 } elseif (-not $hasCoords) {
@@ -234,8 +246,8 @@ if ($SkipRiskGate) {
     }
 }
 
-# STEP 5 - Paper Order Staging Ticket
-Show-Step 5 "Paper Order Staging Command (Copy and Run)" "Green"
+# STEP 6 - Paper Order Staging Ticket
+Show-Step 6 "Paper Order Staging Command (Copy and Run)" "Green"
 if (-not $hasCoords) {
     Show-Skip "No coordinates provided. Add -Entry -Stop -Target to generate."
 } else {
@@ -255,8 +267,8 @@ if (-not $hasCoords) {
     Write-Host "  Always verify levels directly on your broker terminal before going live." -ForegroundColor Yellow
 }
 
-# STEP 6 - Live Quotes + Alerts
-Show-Step 6 "Live Quote & Alert Watch" "Cyan"
+# STEP 7 - Live Quotes + Alerts
+Show-Step 7 "Live Quote & Alert Watch" "Cyan"
 Write-Host "  Live quote for $Symbol :" -ForegroundColor Cyan
 python "$SKILL\nse_alerts.py" quote $SymbolNS @nowArg
 Write-Host ""
@@ -292,3 +304,6 @@ Write-Host "    Scan ORB breakouts (intraday): python `"$SKILL\nse_scanner.py`" 
 Write-Host "    View all broker fee profiles : python `"$SKILL\broker_bridge.py`" brokers" -ForegroundColor DarkGray
 Write-Host "    View paper trade ledger      : python `"$SKILL\broker_bridge.py`" ledger" -ForegroundColor DarkGray
 Write-Host ""
+
+# MANDATORY REGULATORY DISCLAIMER
+python -c "import sys; sys.path.insert(0, '$SKILL'); from nse_ui import UI; print(UI().disclaimer())"

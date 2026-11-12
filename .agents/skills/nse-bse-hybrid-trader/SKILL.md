@@ -180,6 +180,7 @@ of plain text) organized into these 4 blocks:
    % & Net EV, and an unmistakable Verdict (`PASS` / `BLOCK` / `NO-TRADE`).
 4. **Actionable Execution Ticket:** Clean ready-to-run `broker_bridge.py` CLI command (`--paper` default), broker-native
    payload, non-bracket SL/GTT reminder when applicable, and optional `nse_alerts.py` stop/target/15:10 IST setup.
+5. **Mandatory SEBI Regulatory Disclaimer & Risk Warning:** Every final response, report, and script output MUST conclude with the prominent disclaimer that the author/skill is NOT a SEBI-registered Research Analyst (RA) or Investment Advisor (IA), that all scans, indicators, and simulations are educational tools only, that capital is at risk, and that the user must independently verify orders on their broker terminal.
 
 ## What It Never Does
 
