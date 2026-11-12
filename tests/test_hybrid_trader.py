@@ -1907,6 +1907,93 @@ def test_human_cli_outputs_across_scripts(
     assert "Removed alert rule" in capsys.readouterr().out
 
 
+def test_tradingview_cloud_indicators_and_mcp_server(tmp_path, capsys, monkeypatch):
+    import io
+    import tv_indicators
+    import tv_mcp_server
+
+    assert tv_indicators.resolve_tv_symbol("BANKBARODA") == "NSE:BANKBARODA"
+    assert tv_indicators.resolve_tv_symbol("NIFTY") == "NSE:NIFTY"
+    assert tv_indicators.resolve_tv_symbol("SENSEX") == "BSE:SENSEX"
+    assert tv_indicators.resolve_tv_symbol("NSE:RELIANCE") == "NSE:RELIANCE"
+
+    mock_tv_response = {
+        "totalCount": 1,
+        "data": [
+            {
+                "s": "NSE:BANKBARODA",
+                "d": [
+                    276.15, 0.42, 275.0, 277.5, 274.0, 15000000, 0.47, 0.93, 0.0,
+                    78.90, 8.21, 248.40, 243.07, 253.91, 28.96, 6.43, 275.29, 99.07, 43.26
+                ]
+            }
+        ]
+    }
+
+    class MockHTTPResponse:
+        def __init__(self, data_dict):
+            self._bytes = json.dumps(data_dict).encode("utf-8")
+        def read(self):
+            return self._bytes
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+
+    def mock_urlopen(req, timeout=10.0):
+        return MockHTTPResponse(mock_tv_response)
+
+    monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
+
+    res = tv_indicators.fetch_tv_technicals(
+        symbols=["BANKBARODA"],
+        timeframe="1d",
+        requested_indicators=["RSI", "MACD", "EMA20", "EMA50", "EMA200", "ADX", "ATR", "VWAP", "STOCH_K", "BB_POWER"]
+    )
+    assert len(res) == 1
+    item = res[0]
+    assert item["ticker"] == "NSE:BANKBARODA"
+    assert item["close"] == 276.15
+    assert item["recommendation"]["stance"] == "BUY"
+    assert item["indicators"]["RSI"]["value"] == 78.90
+
+    # Test human table output
+    table_str = tv_indicators.format_human_tv_report(item)
+    assert "TRADINGVIEW CLOUD TECHNICALS" in table_str
+    assert "NSE:BANKBARODA" in table_str
+    assert "OVERBOUGHT" in table_str
+
+    # Test CLI main
+    assert tv_indicators.main(["--symbol", "BANKBARODA"]) == 0
+    cli_out = capsys.readouterr().out
+    assert "TRADINGVIEW CLOUD TECHNICALS" in cli_out
+
+    assert tv_indicators.main(["--symbol", "BANKBARODA", "--json"]) == 0
+    json_out = capsys.readouterr().out
+    parsed = json.loads(json_out)
+    assert parsed[0]["ticker"] == "NSE:BANKBARODA"
+
+    # Test MCP Server tools
+    tools = tv_mcp_server.get_tools_list()
+    assert len(tools) == 2
+    tool_names = [t["name"] for t in tools]
+    assert "get_tradingview_technicals" in tool_names
+    assert "scan_tradingview_stocks" in tool_names
+
+    call_res = tv_mcp_server.handle_tool_call(
+        "get_tradingview_technicals",
+        {"symbol": "BANKBARODA", "timeframe": "1d", "indicators": ["RSI", "MACD"]}
+    )
+    assert "TradingView Cloud Technicals for NSE:BANKBARODA" in call_res["content"][0]["text"]
+
+    scan_res = tv_mcp_server.handle_tool_call(
+        "scan_tradingview_stocks",
+        {"symbols": ["BANKBARODA"], "timeframe": "1d"}
+    )
+    assert "TradingView Multi-Stock Scan" in scan_res["content"][0]["text"]
+
+
+
 
 
 
