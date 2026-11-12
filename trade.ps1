@@ -134,7 +134,6 @@ Write-Host $bar2 -ForegroundColor Yellow
 # STEP 0 - Market Clock
 Show-Step 0 "NSE/BSE Market Clock & Session Phase" "Magenta"
 python "$SKILL\nse_alerts.py" clock @nowArg
-if ($LASTEXITCODE -ne 0) { Show-Err "Clock check failed (non-critical)" }
 
 # STEP 1 - News & Regulatory Feed
 Show-Step 1 "News, Earnings & Regulatory Briefing (Last $NewsHours hrs)" "Cyan"
@@ -154,8 +153,7 @@ if ($SkipNews) {
 # STEP 2 - TradingView Cloud Technical Indicators (32+ Indicators, 0% CPU Load)
 Show-Step 2 "TradingView Cloud Scanner: RSI, MACD, Stoch, ADX, Ichimoku, Pivot Points" "Cyan"
 python "$SKILL\tv_indicators.py" `
-    --symbol $Symbol `
-    --exchange $Exchange
+    --symbol $Symbol
 
 if ($LASTEXITCODE -ne 0) {
     Show-Err "TradingView cloud scanner failed (check internet). Continuing with local analysis..."
@@ -306,4 +304,4 @@ Write-Host "    View paper trade ledger      : python `"$SKILL\broker_bridge.py`
 Write-Host ""
 
 # MANDATORY REGULATORY DISCLAIMER
-python -c "import sys; sys.path.insert(0, '$SKILL'); from nse_ui import UI; print(UI().disclaimer())"
+python -c "import os, sys; from nse_ui import UI; print(UI().disclaimer())"
