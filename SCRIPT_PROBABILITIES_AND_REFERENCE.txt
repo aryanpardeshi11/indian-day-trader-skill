@@ -1,0 +1,382 @@
+====================================================================================================
+           NSE/BSE HYBRID TRADER -- COMPLETE CLI REFERENCE & EXECUTION MANUAL
+====================================================================================================
+Document: All Probabilities, Permutations, CLI Scripts, Categories & Edge-Case Combinations
+Environment: Python 3.10+ (Standard Library + TradingView Cloud Scanner + Zero Required Pip Wheels)
+Regulatory Notice: Strictly for educational, backtesting, and algorithmic sizing simulation purposes.
+====================================================================================================
+
+TABLE OF CONTENTS
+----------------------------------------------------------------------------------------------------
+1. OVERALL ARCHITECTURE & WORKFLOW MODES
+2. CATEGORY 1: UNIFIED WORKFLOWS & INTERACTIVE HUBS
+3. CATEGORY 2: REAL-TIME MARKET SCANNERS & ROTATION HEATMAPS
+4. CATEGORY 3: DERIVATIVES (F&O), OPTION GREEKS & MAX PAIN ENGINES
+5. CATEGORY 4: TECHNICAL INDICATORS & CLOUD MARKET INTELLIGENCE
+6. CATEGORY 5: INSTITUTIONAL RISK GATE, 2026 STATUTORY TAXES & POSITION SIZERS
+7. CATEGORY 6: MONTE CARLO SIMULATOR & TIMEMACHINE HISTORICAL BACKTESTERS
+8. CATEGORY 7: LIVE MULTI-BROKER STAGING & EXECUTION BRIDGES
+9. CATEGORY 8: ALERTS, WATCH MONITORS & TELEGRAPHIC LEDGERS
+10. CATEGORY 9: EXHAUSTIVE MATRIX OF ALL PERMUTATIONS & PROBABILITIES
+11. MANDATORY SEBI REGULATORY & RISK NOTICE
+====================================================================================================
+
+
+====================================================================================================
+1. OVERALL ARCHITECTURE & WORKFLOW MODES
+====================================================================================================
+The Indian Day Trader skill provides modular, deterministic command-line engines covering four 
+primary trading segments:
+  • EQ_DELIVERY   : Equity Delivery / Cash Swing Trading (0% STT Buy, 0.1% STT Sell, DP charges)
+  • EQ_INTRADAY   : Equity Day Trading (0.025% STT Sell, 5x leverage max, mandatory 15:15 IST square-off)
+  • FNO_FUT       : NSE Futures (0.02% STT Sell, span+exposure margin, contract expiry roll)
+  • FNO_OPT       : NSE Options (0.1% STT on Premium Sell / 0.125% Exercise, Black-Scholes Greeks, 
+                    decay & volatility models)
+
+Every command can be executed in three operational modes:
+  A. Full Unified Pipeline (run_all.py): Runs news sentiment, TV cloud indicators, market structure,
+     Monte Carlo backtests, 2026 tax gating, and stages paper orders in a single end-to-end run.
+  B. Guided Interactive Terminal Menu (menu.py): Interactive numeric prompts for quick analysis.
+  C. Granular Standalone CLI Execution: Invoking specific standalone engines for specialized tasks
+     such as Option Chain Greeks, Sector Rotation, or Custom Trade Sizing.
+
+
+====================================================================================================
+2. CATEGORY 1: UNIFIED WORKFLOWS & INTERACTIVE HUBS
+====================================================================================================
+
+[1.1] Interactive Terminal Menu (All-in-One Selector)
+-----------------------------------------------------
+Launch the interactive command center with numbered menus, guided wizard, and direct script routing:
+  $ python menu.py
+
+List all available underlying skill modules:
+  $ python menu.py --skills
+
+Catalog all available TradingView cloud indicators:
+  $ python menu.py --catalog
+
+[1.2] End-to-End Analysis Pipeline (run_all.py)
+-----------------------------------------------
+Execute the complete institutional pipeline (Clock -> News -> Indicators -> Monte Carlo -> Risk Gate):
+
+Standard Positional Syntax:
+  $ python run_all.py RELIANCE --segment EQ_INTRADAY --capital 100000 --risk-pct 1.0
+
+Flag-style Syntax with Custom Entry, Stop, and Target:
+  $ python run_all.py --symbol INFY --segment EQ_DELIVERY --capital 200000 --risk-pct 1.5
+
+Futures Contract Analysis:
+  $ python run_all.py --symbol NIFTY26NOVFUT --segment FNO_FUT --capital 500000 --risk-pct 1.0 --lot-size 25
+
+Index Option Custom Sizing & Pipeline Analysis:
+  $ python run_all.py --symbol NIFTY26NOV25600CE --segment FNO_OPT --entry 65.0 --stop 45.0 --target 105.0 --lot-size 25 --capital 100000 --risk-pct 1.0 --broker zerodha
+
+PowerShell Continuation Syntax (Copy-Pasteable):
+  $ python run_all.py `
+      --symbol BANKNIFTY26NOV52000PE `
+      --segment FNO_OPT `
+      --entry 134.0 `
+      --stop 125.0 `
+      --target 210.0 `
+      --lot-size 15 `
+      --capital 150000 `
+      --risk-pct 1.0 `
+      --broker angel_one
+
+Dry-Run Mode (Simulation only, skips network calls):
+  $ python run_all.py TCS --dry-run
+
+
+====================================================================================================
+3. CATEGORY 2: REAL-TIME MARKET SCANNERS & ROTATION HEATMAPS
+====================================================================================================
+
+[2.1] Watchlist Opportunity Scanner (scan_watchlist.py)
+-------------------------------------------------------
+Scans pre-defined market pools against TradingView cloud technicals (RSI, ADX, MACD, Moving Averages):
+
+Scan Nifty 50 for Strong Buy / Buy Setups:
+  $ python scan_watchlist.py --pool nifty50 --filter BUY
+
+Scan Nifty Bank for Overbought / Sell Candidates:
+  $ python scan_watchlist.py --pool banknifty --filter SELL
+
+Scan F&O Watchlist on 1-Hour Timeframe:
+  $ python scan_watchlist.py --pool fno --timeframe 1h --filter BUY
+
+Scan Custom Comma-Separated Symbols:
+  $ python scan_watchlist.py --symbols RELIANCE,TCS,HDFCBANK,INFY,ICICIBANK --filter ALL
+
+Scan High Momentum Stocks for Options Trading:
+  $ python scan_watchlist.py --pool nifty50 --segment FNO_OPT --filter STRONG_BUY
+
+[2.2] Sector Rotation & Market Breadth Heatmap (nse_sector_scanner.py)
+----------------------------------------------------------------------
+Analyzes institutional money rotation across all 9 major NSE sectors vs. NIFTY 50 baseline:
+
+Execute Real-Time Sector Rotation & Breadth Scan:
+  $ python nse_sector_scanner.py
+
+Export Sector Heatmap to JSON:
+  $ python nse_sector_scanner.py --json
+
+Key Metrics Delivered:
+  • Relative Strength (RS) vs. Nifty Baseline (Identifies top 2 leaders and bottom 2 laggards)
+  • Advance/Decline (A/D) Ratio of sectoral indices
+  • Breadth Sentiment: Widespread Rally vs. Narrow Heavyweight Skew
+  • Trading Rule: Long breakout filtering strictly in outperforming sectors
+
+[2.3] Intraday 15-Minute Opening Range Breakout (ORB) Scanner (nse_scanner.py)
+-----------------------------------------------------------------------------
+Scans top liquid stocks for 15-minute Opening Range High/Low breaks:
+
+Run Morning ORB Scanner:
+  $ python nse_scanner.py --strategy orb15
+
+Run VWAP Pullback Scanner:
+  $ python nse_scanner.py --strategy vwap_pullback
+
+Run End-of-Day Multi-Timeframe Scan:
+  $ python nse_scanner.py --timeframe 1d --limit 15
+
+
+====================================================================================================
+4. CATEGORY 3: DERIVATIVES (F&O), OPTION GREEKS & MAX PAIN ENGINES
+====================================================================================================
+
+[3.1] Live Option Chain, Greeks & Max Pain Engine (nse_option_chain.py)
+----------------------------------------------------------------------
+Pure Python Black-Scholes engine calculating Put-Call Ratio, Max Pain Strike, and Greeks:
+
+Analyze NIFTY Expiry:
+  $ python nse_option_chain.py NIFTY --expiry-days 6
+
+Analyze BANKNIFTY Nearest Expiry:
+  $ python nse_option_chain.py BANKNIFTY --expiry-days 3
+
+Analyze FINNIFTY with Custom Underlying Price and Expiry Days:
+  $ python nse_option_chain.py FINNIFTY --underlying-price 24150.0 --expiry-days 5
+
+Analyze Stock Options (e.g. RELIANCE, TATASTEEL):
+  $ python nse_option_chain.py RELIANCE --underlying-price 1280.0 --expiry-days 14
+
+Output Format in JSON for Automated Processing:
+  $ python nse_option_chain.py NIFTY --json
+
+Metrics Provided:
+  • Put-Call Ratio (PCR) for Open Interest and Volume
+  • Max Pain Strike (strike price causing minimum payoff to option buyers)
+  • Delta (Δ), Gamma (Γ), Vega (ν), and exact daily Rupee Theta (Θ) decay per lot
+  • Ranked table of high-probability trade setups around ATM
+
+
+====================================================================================================
+5. CATEGORY 4: TECHNICAL INDICATORS & CLOUD MARKET INTELLIGENCE
+====================================================================================================
+
+[4.1] TradingView Cloud Technicals (tv_indicators.py)
+-----------------------------------------------------
+Fetches institutional cloud scans directly from TradingView:
+
+Fetch Default Comprehensive Indicators for Single Symbol:
+  $ python tv_indicators.py RELIANCE
+
+Fetch on 1-Hour Intraday Timeframe:
+  $ python tv_indicators.py HDFCBANK --timeframe 1h
+
+Fetch on 15-Minute Scalp Timeframe:
+  $ python tv_indicators.py NIFTY --timeframe 15m
+
+Output Raw JSON Indicator Values:
+  $ python tv_indicators.py INFY --json
+
+Fetch Specific Named Indicators:
+  $ python tv_indicators.py TCS --indicators "RSI,MACD.macd,MACD.signal,ADX,EMA20,EMA50,VWAP"
+
+[4.2] Financial News & Sentiment Feed (nse_news.py)
+---------------------------------------------------
+Pulls real-time Indian market news and scores institutional sentiment:
+
+Fetch Market News for a Specific Stock:
+  $ python nse_news.py --symbol RELIANCE
+
+Fetch Macro Market & Economy News:
+  $ python nse_news.py --macro
+
+Fetch High-Impact F&O Corporate Action Bulletins:
+  $ python nse_news.py --corporate-actions
+
+
+====================================================================================================
+6. CATEGORY 5: INSTITUTIONAL RISK GATE, 2026 STATUTORY TAXES & POSITION SIZERS
+====================================================================================================
+
+[5.1] Indian Risk Gate & Statutory 2026 Tax Engine (indian_risk_gate.py)
+-----------------------------------------------------------------------
+Validates coordinates, limits capital risk, calculates exact brokerage and 2026 taxes:
+
+Equity Intraday Risk Sizing:
+  $ python indian_risk_gate.py --symbol RELIANCE --segment EQ_INTRADAY --entry 1280.0 --stop 1265.0 --target 1315.0 --capital 100000 --risk-pct 1.0 --broker zerodha
+
+Equity Delivery Swing Sizing:
+  $ python indian_risk_gate.py --symbol TCS --segment EQ_DELIVERY --entry 4150.0 --stop 4020.0 --target 4400.0 --capital 250000 --risk-pct 1.5 --broker angel_one
+
+Futures Contract Risk Check:
+  $ python indian_risk_gate.py --symbol NIFTY26NOVFUT --segment FNO_FUT --entry 25800.0 --stop 25720.0 --target 26000.0 --lot-size 25 --capital 500000 --risk-pct 1.0 --broker dhan
+
+Options Buying Trade Sizing:
+  $ python indian_risk_gate.py --symbol FINNIFTY26NOV27200PE --segment FNO_OPT --entry 134.0 --stop 125.0 --target 210.0 --lot-size 25 --capital 100000 --risk-pct 1.0 --broker groww
+
+Zero-Brokerage Discount Broker Sizing (e.g., Shoonya):
+  $ python indian_risk_gate.py --symbol INFY --segment EQ_INTRADAY --entry 1850.0 --stop 1835.0 --target 1880.0 --capital 50000 --risk-pct 1.0 --broker shoonya
+
+JSON Export for API/Webhook Integration:
+  $ python indian_risk_gate.py --symbol RELIANCE --segment EQ_INTRADAY --entry 1280.0 --stop 1265.0 --target 1315.0 --json
+
+
+====================================================================================================
+7. CATEGORY 6: MONTE CARLO SIMULATOR & TIMEMACHINE HISTORICAL BACKTESTERS
+====================================================================================================
+
+[6.1] Monte Carlo Risk Simulator & TimeMachine (nse_timemachine.py)
+------------------------------------------------------------------
+Runs 1,000+ stochastic simulations to calculate Probability of Profit (PoP) and Maximum Drawdown:
+
+Standard 1,000-Path Monte Carlo Simulation:
+  $ python nse_timemachine.py --symbol RELIANCE --entry 1280.0 --stop 1265.0 --target 1315.0 --paths 1000
+
+High-Precision Simulation (5,000 paths):
+  $ python nse_timemachine.py --symbol BANKNIFTY --entry 52000.0 --stop 51750.0 --target 52500.0 --paths 5000
+
+Intraday Horizon Simulation (1-day lookahead):
+  $ python nse_timemachine.py --symbol TATASTEEL --entry 142.0 --stop 139.5 --target 147.0 --horizon 1
+
+Delivery Multi-Week Horizon (15-day lookahead):
+  $ python nse_timemachine.py --symbol INFY --entry 1850.0 --stop 1790.0 --target 1980.0 --horizon 15
+
+
+====================================================================================================
+8. CATEGORY 7: LIVE MULTI-BROKER STAGING & EXECUTION BRIDGES
+====================================================================================================
+
+[8.1] Universal Multi-Broker Bridge (broker_bridge.py)
+------------------------------------------------------
+Stages orders in local SQLite paper ledger or dispatches live API orders across 9 brokers:
+
+Stage Paper Order (Default Safe Mode):
+  $ python broker_bridge.py --stage --symbol RELIANCE --segment EQ_INTRADAY --side BUY --qty 50 --price 1280.0 --trigger-price 1265.0 --broker zerodha
+
+Stage F&O Options Order:
+  $ python broker_bridge.py --stage --symbol NIFTY26NOV25600CE --segment FNO_OPT --side BUY --qty 25 --price 65.0 --broker angel_one
+
+List Staged Paper Ledger Orders:
+  $ python broker_bridge.py --list-staged
+
+Inspect Portfolio / Executed Paper Fills:
+  $ python broker_bridge.py --portfolio
+
+Cancel Staged Order by Order ID:
+  $ python broker_bridge.py --cancel --order-id ORD_1731481234_1
+
+Sync Instrument Tokens (Zerodha / Angel / Fyers Scrip Masters):
+  $ python broker_bridge.py --sync-scrips --broker angel_one
+
+[8.2] Angel One SmartAPI Direct Gateway (smartapi_bridge.py)
+------------------------------------------------------------
+Direct authentication and session generation via SmartAPI TOTP:
+
+Generate Session & Verify Authentication:
+  $ python smartapi_bridge.py --test-auth
+
+Fetch Real-Time Funds / Margin Summary:
+  $ python smartapi_bridge.py --funds
+
+
+====================================================================================================
+9. CATEGORY 8: ALERTS, WATCH MONITORS & TELEGRAPHIC LEDGERS
+====================================================================================================
+
+[9.1] Market Clock, Session Timelines & Watch Monitors (nse_alerts.py)
+----------------------------------------------------------------------
+Checks NSE market hours, holiday calendars, expiry schedules, and price thresholds:
+
+Inspect Live Market Session Status (Pre-open, Regular, Closing, Muhurat):
+  $ python nse_alerts.py clock
+
+Set Price Breakout Alert:
+  $ python nse_alerts.py add --symbol RELIANCE --above 1300.0 --note "Resistance breakout"
+
+Set Stop Breakdown Alert:
+  $ python nse_alerts.py add --symbol HDFCBANK --below 1680.0 --note "Support breakdown"
+
+List Active Alerts:
+  $ python nse_alerts.py list
+
+Run Continuous Live Price Monitor (Polling loop):
+  $ python nse_alerts.py watch --interval 10
+
+
+====================================================================================================
+10. CATEGORY 9: EXHAUSTIVE MATRIX OF ALL PERMUTATIONS & PROBABILITIES
+====================================================================================================
+
+Matrix Dimension A: Supported Broker Configurations (9 Total)
+  1. zerodha        (Zerodha Kite Connect)
+  2. angel_one      (Angel One SmartAPI)
+  3. upstox         (Upstox Developer API)
+  4. dhan           (DhanHQ API)
+  5. fyers          (Fyers API v3)
+  6. groww          (Groww Webhooks / Order Gateway)
+  7. kotak_neo      (Kotak Neo Trade API)
+  8. icici_breeze   (ICICI Direct Breeze API)
+  9. shoonya        (Finvasia Shoonya API - Zero Brokerage)
+
+Matrix Dimension B: Supported Trading Segments (4 Total)
+  1. EQ_DELIVERY    (Cash Delivery / Positional)
+  2. EQ_INTRADAY    (MIS / Cash Intraday)
+  3. FNO_FUT        (Stock / Index Futures)
+  4. FNO_OPT        (Stock / Index Options)
+
+Matrix Dimension C: 36 Broker x Segment Tax Permutations
+  • All 36 permutations (9 Brokers x 4 Segments) are tested and verified for 2026 statutory taxes:
+    [zerodha-EQ_DELIVERY], [zerodha-EQ_INTRADAY], [zerodha-FNO_FUT], [zerodha-FNO_OPT]
+    [angel_one-EQ_DELIVERY], [angel_one-EQ_INTRADAY], [angel_one-FNO_FUT], [angel_one-FNO_OPT]
+    [upstox-EQ_DELIVERY], [upstox-EQ_INTRADAY], [upstox-FNO_FUT], [upstox-FNO_OPT]
+    [dhan-EQ_DELIVERY], [dhan-EQ_INTRADAY], [dhan-FNO_FUT], [dhan-FNO_OPT]
+    [fyers-EQ_DELIVERY], [fyers-EQ_INTRADAY], [fyers-FNO_FUT], [fyers-FNO_OPT]
+    [groww-EQ_DELIVERY], [groww-EQ_INTRADAY], [groww-FNO_FUT], [groww-FNO_OPT]
+    [kotak_neo-EQ_DELIVERY], [kotak_neo-EQ_INTRADAY], [kotak_neo-FNO_FUT], [kotak_neo-FNO_OPT]
+    [icici_breeze-EQ_DELIVERY], [icici_breeze-EQ_INTRADAY], [icici_breeze-FNO_FUT], [icici_breeze-FNO_OPT]
+    [shoonya-EQ_DELIVERY], [shoonya-EQ_INTRADAY], [shoonya-FNO_FUT], [shoonya-FNO_OPT]
+
+Matrix Dimension D: Standard Index Lot Sizes Enforced
+  • NIFTY          : 25 shares/lot
+  • BANKNIFTY      : 15 shares/lot
+  • FINNIFTY       : 25 shares/lot
+  • MIDCPNIFTY     : 50 shares/lot
+  • NIFTYNXT50     : 10 shares/lot
+
+Matrix Dimension E: Probability Boundaries Handled (Edge Cases)
+  • 0 DTE Expiry   : Delta collapses cleanly to 1.0 (ITM) or 0.0 (OTM); Theta doesn't divide by zero.
+  • Deep OTM/ITM   : Implied volatility boundaries handled from 0.001% up to 500%.
+  • Circuit Bands  : Automatic trade rejection when price targets exceed 2%, 5%, 10%, or 20% bands.
+  • F&O Ban Lists  : Immediate rejection if MWPL > 95% or if script is entered into surveillance ban.
+  • Surveillance   : Rejection of Long/Short orders on ASM/GSM Grade I-IV securities.
+
+
+====================================================================================================
+11. MANDATORY SEBI REGULATORY & RISK NOTICE
+====================================================================================================
+• NOT SEBI REGISTERED: The author, skill, and associated algorithms are NOT SEBI-registered 
+  Research Analysts (RA) or Investment Advisors (IA) under SEBI (Research Analysts) Regulations, 2014.
+• EDUCATIONAL ONLY: All technical scans, calculations, indicators, Monte Carlo simulations, and 
+  options chain Greeks are educational and backtesting tools. Nothing herein constitutes investment 
+  advice, financial tips, stock recommendations, or trading calls.
+• CAPITAL AT RISK: Trading Indian equities, intraday equities, and especially derivatives (F&O) carries 
+  substantial financial risk of complete capital loss. SEBI studies show 9 out of 10 individual 
+  traders in equity F&O incur net financial losses. Never risk capital you cannot afford to lose.
+• VERIFY INDEPENDENTLY: Always independently verify live market quotes, contract lot sizes, margin 
+  requirements, circuit limits, and order tickets directly on your SEBI-registered broker terminal 
+  prior to order placement. Trade strictly at your own discretion and risk.
+====================================================================================================

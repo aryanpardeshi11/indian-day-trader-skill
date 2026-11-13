@@ -1993,6 +1993,36 @@ def test_tradingview_cloud_indicators_and_mcp_server(tmp_path, capsys, monkeypat
     assert "TradingView Multi-Stock Scan" in scan_res["content"][0]["text"]
 
 
+def test_option_chain_and_sector_scanner():
+    """Verify Black-Scholes Greeks, PCR, Max Pain, and Sector Rotation Heatmap."""
+    import nse_option_chain
+    import nse_sector_scanner
+
+    # 1. Black-Scholes Greeks pure math
+    g = nse_option_chain.black_scholes_greeks(spot=25600.0, strike=25600.0, time_to_expiry_years=5/365.0, iv=0.14)
+    assert 0.45 <= g["call_delta"] <= 0.60
+    assert -0.60 <= g["put_delta"] <= -0.45
+    assert g["gamma"] > 0
+    assert g["vega"] > 0
+    assert g["call_theta"] < 0
+    assert g["put_theta"] < 0
+
+    # 2. Synthetic Chain & Max Pain
+    synth = nse_option_chain.generate_synthesized_chain("NIFTY", spot=25600.0, num_strikes=11)
+    recs = synth["records"]["data"]
+    assert len(recs) == 11
+    pcr = nse_option_chain.calculate_pcr(recs)
+    assert 0.5 <= pcr["pcr_oi"] <= 2.0
+    assert pcr["stance"] in ("BULLISH", "BEARISH", "NEUTRAL")
+
+    max_pain, _ = nse_option_chain.calculate_max_pain(recs)
+    assert 25000.0 <= max_pain <= 26200.0
+
+    # 3. Sector Scanner Execution
+    assert nse_sector_scanner.scan_sectors() == 0
+
+
+
 
 
 
