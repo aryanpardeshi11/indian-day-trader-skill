@@ -40,7 +40,7 @@ BUILTIN_NIFTY50 = [
     "ITC", "INDUSINDBK", "INFY", "JSWSTEEL", "KOTAKBANK", "LT",
     "M&M", "MARUTI", "NTPC", "NESTLEIND", "ONGC", "POWERGRID",
     "RELIANCE", "SBILIFE", "SHRIRAMFIN", "SBIN", "SUNPHARMA", "TCS",
-    "TATACONSUM", "TATAMOTORS", "TATASTEEL", "TECHM", "TITAN", "TRENT",
+    "TATACONSUM", "TMPV", "TATASTEEL", "TECHM", "TITAN", "TRENT",
     "ULTRACEMCO", "WIPRO"
 ]
 
@@ -310,7 +310,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="NSE/BSE Watchlist Opportunity & Trade Setup Scanner",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("symbols", nargs="*", help="Ticker symbols (e.g. RELIANCE SUZLON TATAMOTORS)")
+    p.add_argument("symbols", nargs="*", help="Ticker symbols (e.g. RELIANCE SUZLON TMPV)")
     p.add_argument("--file", "-f", default=None, help="Watchlist text file path (one symbol per line)")
     p.add_argument("--pool", "-p", choices=["nifty50", "niftybank", "fno"], default=None, help="Built-in pool of Indian stocks")
     p.add_argument("--segment", choices=["EQ_DELIVERY", "EQ_INTRADAY", "FNO_FUT", "FNO_OPT"], default="EQ_DELIVERY", help="Trading segment")

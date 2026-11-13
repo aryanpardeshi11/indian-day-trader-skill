@@ -95,11 +95,11 @@ def test_pcr_and_max_pain_boundaries():
 def test_all_index_lot_sizes_recognized():
     """Verify all major Indian indices map to their exact exchange lot size."""
     for idx_name, expected_lot in [
-        ("NIFTY", 25),
-        ("BANKNIFTY", 15),
-        ("FINNIFTY", 25),
-        ("MIDCPNIFTY", 50),
-        ("SENSEX", 10),
+        ("NIFTY", 65),
+        ("BANKNIFTY", 30),
+        ("FINNIFTY", 60),
+        ("MIDCPNIFTY", 120),
+        ("SENSEX", 20),
         ("BANKEX", 15),
     ]:
         assert nse_option_chain.INDEX_LOT_SIZES[idx_name] == expected_lot

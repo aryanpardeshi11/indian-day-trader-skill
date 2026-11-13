@@ -109,7 +109,7 @@ BUILTIN_NIFTY50_SYMBOLS = [
     ("SHRIRAMFIN", "Shriram Finance Ltd.", "Financial Services"),
     ("SUNPHARMA", "Sun Pharmaceutical Industries Ltd.", "Healthcare"),
     ("TATACONSUM", "Tata Consumer Products Ltd.", "Fast Moving Consumer Goods"),
-    ("TATAMOTORS", "Tata Motors Ltd.", "Automobile and Auto Components"),
+    ("TMPV", "Tata Motors Passenger Vehicles Ltd.", "Automobile and Auto Components"),
     ("TATASTEEL", "Tata Steel Ltd.", "Metals & Mining"),
     ("TCS", "Tata Consultancy Services Ltd.", "Information Technology"),
     ("TECHM", "Tech Mahindra Ltd.", "Information Technology"),

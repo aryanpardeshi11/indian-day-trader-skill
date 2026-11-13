@@ -473,7 +473,7 @@ def interactive_custom_trade_sizer() -> None:
         mode_choice = input("  Choice (1 or 2, Default: 1): ").strip() or "1"
         if mode_choice == "1":
             safe_print("\n  Paste your parameter string below and press Enter:")
-            safe_print(ui.dim("  Example: --symbol NIFTY26NOV25600CE --segment FNO_OPT --entry 65 --stop 45 --target 105 --lot-size 25 --capital 100000 --risk-pct 1.0 --broker zerodha"))
+            safe_print(ui.dim("  Example: --symbol NIFTY26NOV25600CE --segment FNO_OPT --entry 65 --stop 45 --target 105 --lot-size 65 --capital 100000 --risk-pct 1.0 --broker zerodha"))
             cmd_line = input("  >> ").strip()
             if not cmd_line:
                 safe_print(ui.yellow("No input provided."))

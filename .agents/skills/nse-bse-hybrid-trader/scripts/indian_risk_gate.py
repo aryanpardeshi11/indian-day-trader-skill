@@ -308,6 +308,17 @@ def evaluate_risk_gate(
     blocks: list[str] = []
     warnings: list[str] = []
 
+    calendar_years = {
+        str(k)[:4]
+        for d_map in ((holidays or {}).get("holidays") or {}, (holidays or {}).get("special_sessions") or {})
+        for k in d_map
+    }
+    if str(dt_ist.year) not in calendar_years:
+        warnings.append(
+            f"HOLIDAY_CALENDAR_MISSING_YEAR: config/nse_holidays.json has no {dt_ist.year} dates; "
+            "exchange holidays will not be detected. Add the official NSE/BSE list for this year."
+        )
+
     hard_cap_pct = float(risk_cfg["hard_max_risk_per_trade_pct"])
     if risk_pct > hard_cap_pct:
         blocks.append(f"RISK_CAP_EXCEEDED: Requested {risk_pct}% > hard ceiling {hard_cap_pct}%")
@@ -669,7 +680,7 @@ def format_human_verdict(res: dict[str, Any], color: bool | None = None) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Deterministic Indian Risk Sizing & Statutory Tax Gate")
-    p.add_argument("--symbol", default="UNKNOWN", help="Ticker symbol (e.g., TATAMOTORS, RELIANCE.NS)")
+    p.add_argument("--symbol", default="UNKNOWN", help="Ticker symbol (e.g., TMPV, RELIANCE.NS)")
     p.add_argument("--capital", type=float, default=50000.0, help="Account capital in INR (default 50000)")
     p.add_argument("--risk-pct", type=float, default=1.0, help="Capital risk %% per trade (default 1.0, ceiling 2.0)")
     p.add_argument("--entry", type=float, required=True, help="Planned entry price in INR")

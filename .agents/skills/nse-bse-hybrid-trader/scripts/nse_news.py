@@ -107,6 +107,8 @@ BUILTIN_COMPANY_NAMES: dict[str, str] = {
     "SUZLON": "Suzlon Energy",
     "TATACONSUM": "Tata Consumer",
     "TATAMOTORS": "Tata Motors",
+    "TMPV": "Tata Motors Passenger Vehicles",
+    "TMCV": "Tata Motors commercial vehicles",
     "TATASTEEL": "Tata Steel",
     "TCS": "TCS",
     "TECHM": "Tech Mahindra",

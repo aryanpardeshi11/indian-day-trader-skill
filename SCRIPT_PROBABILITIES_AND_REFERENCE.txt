@@ -67,10 +67,10 @@ Flag-style Syntax with Custom Entry, Stop, and Target:
   $ python run_all.py --symbol INFY --segment EQ_DELIVERY --capital 200000 --risk-pct 1.5
 
 Futures Contract Analysis:
-  $ python run_all.py --symbol NIFTY26NOVFUT --segment FNO_FUT --capital 500000 --risk-pct 1.0 --lot-size 25
+  $ python run_all.py --symbol NIFTY26NOVFUT --segment FNO_FUT --capital 500000 --risk-pct 1.0 --lot-size 65
 
 Index Option Custom Sizing & Pipeline Analysis:
-  $ python run_all.py --symbol NIFTY26NOV25600CE --segment FNO_OPT --entry 65.0 --stop 45.0 --target 105.0 --lot-size 25 --capital 100000 --risk-pct 1.0 --broker zerodha
+  $ python run_all.py --symbol NIFTY26NOV25600CE --segment FNO_OPT --entry 65.0 --stop 45.0 --target 105.0 --lot-size 65 --capital 100000 --risk-pct 1.0 --broker zerodha
 
 PowerShell Continuation Syntax (Copy-Pasteable):
   $ python run_all.py `
@@ -79,7 +79,7 @@ PowerShell Continuation Syntax (Copy-Pasteable):
       --entry 134.0 `
       --stop 125.0 `
       --target 210.0 `
-      --lot-size 15 `
+      --lot-size 30 `
       --capital 150000 `
       --risk-pct 1.0 `
       --broker angel_one
@@ -223,10 +223,10 @@ Equity Delivery Swing Sizing:
   $ python indian_risk_gate.py --symbol TCS --segment EQ_DELIVERY --entry 4150.0 --stop 4020.0 --target 4400.0 --capital 250000 --risk-pct 1.5 --broker angel_one
 
 Futures Contract Risk Check:
-  $ python indian_risk_gate.py --symbol NIFTY26NOVFUT --segment FNO_FUT --entry 25800.0 --stop 25720.0 --target 26000.0 --lot-size 25 --capital 500000 --risk-pct 1.0 --broker dhan
+  $ python indian_risk_gate.py --symbol NIFTY26NOVFUT --segment FNO_FUT --entry 25800.0 --stop 25720.0 --target 26000.0 --lot-size 65 --capital 500000 --risk-pct 1.0 --broker dhan
 
 Options Buying Trade Sizing:
-  $ python indian_risk_gate.py --symbol FINNIFTY26NOV27200PE --segment FNO_OPT --entry 134.0 --stop 125.0 --target 210.0 --lot-size 25 --capital 100000 --risk-pct 1.0 --broker groww
+  $ python indian_risk_gate.py --symbol FINNIFTY26NOV27200PE --segment FNO_OPT --entry 134.0 --stop 125.0 --target 210.0 --lot-size 60 --capital 100000 --risk-pct 1.0 --broker groww
 
 Zero-Brokerage Discount Broker Sizing (e.g., Shoonya):
   $ python indian_risk_gate.py --symbol INFY --segment EQ_INTRADAY --entry 1850.0 --stop 1835.0 --target 1880.0 --capital 50000 --risk-pct 1.0 --broker shoonya

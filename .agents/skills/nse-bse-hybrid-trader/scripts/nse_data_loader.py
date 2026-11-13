@@ -5,7 +5,7 @@ Standard library only. Supports live Yahoo Finance data or offline chart JSON fi
 Usage:
     python scripts/nse_data_loader.py --symbol RELIANCE.NS
     python scripts/nse_data_loader.py --symbol NIFTY --json
-    python scripts/nse_data_loader.py --symbol TATAMOTORS.NS --offline-5m path/to/5m.json --offline-1d path/to/1d.json
+    python scripts/nse_data_loader.py --symbol TMPV.NS --offline-5m path/to/5m.json --offline-1d path/to/1d.json
 """
 
 from __future__ import annotations
