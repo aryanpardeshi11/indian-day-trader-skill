@@ -46,7 +46,7 @@ decouples the two:
 ├──────────────────────────┤   ├──────────────────────────┤   ├────────────────────────────┤
 │ • nse_alerts.py clock    │   │ • tv_indicators.py       │   │ • nse_timemachine.py       │
 │   (IST session & bells)  │   │   (32+ Cloud Indicators, │   │   (10,000 Monte Carlo paths│
-│ • nse_news.py            │   │    0% Local CPU Load)    │   │    probabilistic resolution│
+│ • nse_news.py            │   │    computed server-side) │   │    probabilistic resolution│
 │   (Google News, SEBI,    │   │ • nse_data_loader.py     │   │ • indian_risk_gate.py      │
 │    BSE & F&O Ban list)   │   │   (EMAs, VWAP, ORH/ORL,  │   │   (2026 STT/GST/SEBI tax   │
 │ • nse_scanner.py         │   │    Confluence, Delivery) │   │    sizing & hard circuits) │
@@ -71,122 +71,172 @@ decouples the two:
 
 ## 🧭 Interactive User Paths: Beginner to Expert Guide
 
-Whether you are placing your first paper trade or backtesting institutional intraday F&O algorithms, choose the path tailored to your experience:
+Whether you are placing your first paper trade or backtesting intraday F&O setups, choose the path tailored to your
+experience. All commands run from the repository root; the engine scripts live in
+`.agents/skills/nse-bse-hybrid-trader/scripts/`, so set a shell variable once:
+
+```bash
+# bash / zsh
+S=.agents/skills/nse-bse-hybrid-trader/scripts
+# PowerShell
+$S = ".agents/skills/nse-bse-hybrid-trader/scripts"
+```
 
 ### 🟢 Path A: Complete Beginners (Zero Technical Stress / Visual & Guided)
-> **Goal:** Explore market setup, check if the stock is healthy, and understand terms like VWAP and RSI without getting overwhelmed.
+
+> **Goal:** Explore market setup, check if the stock is healthy, and understand terms like VWAP and RSI without
+> getting overwhelmed.
 
 1. **Launch the Interactive Terminal Menu:**
+
    ```bash
    python menu.py
    ```
+
 2. **Follow the on-screen prompts:**
    - Select `[1]` to run the Full Pipeline.
    - Enter your symbol (e.g. `SUZLON`, `RELIANCE`, `TCS`, `NYKAA`).
-   - Leave Entry, Stop, and Target blank (press **Enter**): the system automatically fetches the live LTP and plans safe baseline swing coordinates (+10% target, -5% stop).
+   - Leave Entry, Stop, and Target blank (press **Enter**): the system fetches the latest price and fills in
+     placeholder swing coordinates (+10% target, -5% stop). These are illustrative defaults, not a trade
+     recommendation — always set your own levels before risking money.
 3. **Read the Beginner-Friendly Tables:**
-   - Plain-English callouts accompany every metric (e.g. *"Above VWAP: Buyers dominate today's volume-weighted average"*).
+   - Plain-English callouts accompany every metric (e.g. *"Above VWAP: Buyers dominate today's volume-weighted
+     average"*).
    - Color-coded badges show `[PASS]`, `[BLOCK]`, `[OPEN]`, or `[CLOSED]`.
    - Clear tax calculations show the exact breakeven price in rupees before any profit is kept.
 
 ### 🟡 Path B: Swing & Momentum Traders (Multi-Day Holding & Delivery)
-> **Goal:** Discover breakout stocks, verify 3-screen multi-timeframe trend confluence, simulate target odds over weeks, and eliminate 2026 delivery tax drag.
+
+> **Goal:** Discover breakout stocks, verify 3-screen multi-timeframe trend confluence, simulate target odds over
+> weeks, and account for delivery tax drag.
 
 1. **Scan the Market for Breakouts:**
+
    ```bash
-   python scripts/nse_scanner.py daily --pool nifty50
+   python $S/nse_scanner.py daily --pool nifty50
    ```
+
 2. **Analyze Multi-Timeframe Structure & News:**
+
    ```bash
-   python scripts/nse_data_loader.py --symbol HDFCBANK --with-news
+   python $S/nse_data_loader.py --symbol HDFCBANK --with-news
    ```
+
 3. **Run 10,000-Path Monte Carlo Simulation:**
+
    ```bash
-   python scripts/nse_timemachine.py --symbol HDFCBANK.NS --entry 1750 --stop 1700 --target 1850 --mode SWING
+   python $S/nse_timemachine.py --symbol HDFCBANK.NS --entry 1750 --stop 1700 --target 1850 --mode SWING
    ```
+
 4. **Size Your Delivery Position with 2026 STT/GST:**
+
    ```bash
-   python scripts/indian_risk_gate.py --symbol HDFCBANK --capital 100000 --risk-pct 1.5 --entry 1750 --stop 1700 --target 1850 --segment EQ_DELIVERY --broker zerodha
+   python $S/indian_risk_gate.py --symbol HDFCBANK --capital 100000 --risk-pct 1.5 --entry 1750 --stop 1700 --target 1850 --segment EQ_DELIVERY --broker zerodha
    ```
 
 ### 🔴 Path C: Intraday & Scalping Traders (9:15 to 15:30 IST Session)
-> **Goal:** Trade 15m Opening Range Breakouts (ORB) with VWAP support, set automated 15:10 IST square-off alarms, and stage paper bracket tickets.
+
+> **Goal:** Trade 15m Opening Range Breakouts (ORB) with VWAP support, set automated 15:10 IST square-off alarms, and
+> stage paper bracket tickets.
 
 1. **Check IST Market Clock & Phase:**
+
    ```bash
-   python scripts/nse_alerts.py clock
+   python $S/nse_alerts.py clock
    ```
+
 2. **Scan for 15-Minute ORB Breakouts at 09:30 IST:**
+
    ```bash
-   python scripts/nse_scanner.py orb --pool nifty50
+   python $S/nse_scanner.py orb --pool nifty50
    ```
-3. **Query Ultra-Fast Cloud Indicators (0% Local CPU Load):**
+
+3. **Query TradingView Cloud Indicators (computed server-side; requires network):**
+
    ```bash
-   python scripts/tv_indicators.py --symbol TATAMOTORS --timeframe 15m --indicators RSI STOCH_K VWAP ATR ADX
+   python $S/tv_indicators.py --symbol TMPV --timeframe 15m --indicators RSI STOCH_K VWAP ATR ADX
    ```
+
 4. **Stage Order & Start Live Desktop Watch with Beeps:**
+
    ```bash
    # Stage paper trade
-   python scripts/broker_bridge.py stage --broker angel_one --symbol TATAMOTORS --segment EQ_INTRADAY --entry 820 --stop 805 --target 850 --paper
+   python $S/broker_bridge.py stage --broker angel_one --symbol TMPV --segment EQ_INTRADAY --entry 420 --stop 412 --target 436 --paper
    # Start active watch (syncs alerts from paper ledger & rings at targets/stops)
-   python scripts/nse_alerts.py watch --interval 15 --until 15:15 --beep
+   python $S/nse_alerts.py watch --interval 15 --until 15:15 --beep
    ```
 
-### 🟣 Path D: Derivatives & F&O Quants (NIFTY / BANKNIFTY Futures & Options)
-> **Goal:** Live option chains, Black-Scholes Greeks, Max Pain calculation, automated lot sizing, F&O ban tracking, and exchange-grade margin calculation.
+### 🟣 Path D: Derivatives & F&O Traders (NIFTY / BANKNIFTY Futures & Options)
 
-1. **Analyze Live Option Chains, Greeks & Max Pain:**
+> **Goal:** Option chains, Black-Scholes Greeks, Max Pain calculation, lot sizing, F&O ban tracking, and margin
+> calculation.
+>
+> **Note:** Since late 2024 NSE lists weekly options only on NIFTY; BANKNIFTY, FINNIFTY and MIDCPNIFTY have monthly
+> expiries only. Index lot sizes used by the tools are NIFTY `65`, BANKNIFTY `30`, FINNIFTY `60`, MIDCPNIFTY `120`
+> and SENSEX `20` (NSE revision effective with the January 2026 contracts) — verify against the exchange before
+> trading, as they are revised periodically.
+
+1. **Analyze Option Chains, Greeks & Max Pain:**
+
    ```bash
-   # Analyze NIFTY Nearest Expiry with Black-Scholes Greeks (Delta, Gamma, Vega, Theta decay)
-   python scripts/nse_option_chain.py NIFTY --expiry-days 6
+   # NIFTY weekly expiry with Black-Scholes Greeks (Delta, Gamma, Vega, Theta decay)
+   python $S/nse_option_chain.py NIFTY --expiry-days 6
 
-   # Analyze BANKNIFTY or FINNIFTY with strike visualization & PCR
-   python scripts/nse_option_chain.py BANKNIFTY --expiry-days 3
+   # BANKNIFTY monthly expiry with strike visualization & PCR
+   python $S/nse_option_chain.py BANKNIFTY --expiry-days 12
    ```
 
-2. **Track Sector Rotation & Institutional Market Breadth:**
+   > [!WARNING]
+   > The NSE option-chain API frequently blocks scripted requests (HTTP 403). When it does, the tool falls back to a
+   > **synthetic, modelled chain** — the banner then reads `SYNTHETIC (MODELLED) OPTION CHAIN` and a warning is
+   > printed. In that case OI, volume, PCR, Max Pain and OI walls are not real market data.
+
+2. **Track Sector Rotation & Market Breadth:**
+
    ```bash
-   # Real-time institutional money rotation across 9 NSE sectors vs. NIFTY baseline
-   python scripts/nse_sector_scanner.py
+   # Relative strength of 9 sector lead stocks vs. their cross-sector average (TradingView data)
+   python $S/nse_sector_scanner.py
    ```
 
 3. **Scan Watchlist Opportunities via TradingView Cloud:**
+
    ```bash
    # Scan Nifty 50 for Strong Buy / Buy candidates
    python scan_watchlist.py --pool nifty50 --filter BUY
    ```
 
 4. **Sync 100,000+ Scrip Tokens (<2ms Local SQLite Lookup):**
+
    ```bash
-   python scripts/broker_bridge.py sync-scrip --broker zerodha
+   python $S/broker_bridge.py sync-scrip --broker zerodha
    ```
 
 5. **Run All-In-One F&O Pipeline or Custom Options Sizing:**
+
    ```bash
    # Futures contract pipeline
    python run_all.py NIFTY --entry 24200 --stop 24050 --target 24500 --segment FNO_FUT --broker zerodha
 
    # Custom Option Buying trade sizing with exact 2026 STT/GST taxes
-   python run_all.py --symbol NIFTY26NOV25600CE --segment FNO_OPT --entry 65.0 --stop 45.0 --target 105.0 --lot-size 25 --capital 100000 --risk-pct 1.0 --broker zerodha
+   python run_all.py --symbol NIFTY26NOV25600CE --segment FNO_OPT --entry 65.0 --stop 45.0 --target 105.0 --lot-size 65 --capital 100000 --risk-pct 1.0 --broker zerodha
    ```
 
 ---
 
 ## 🎲 Probability & Quantitative Simulation Matrix
 
-The suite includes dedicated mathematical simulation scripts designed to protect traders against unrealistic expectations, coin-flip setups, and hidden tax drag:
+The suite includes dedicated mathematical simulation scripts designed to protect traders against unrealistic
+expectations, coin-flip setups, and hidden tax drag:
 
 | Simulation Script | Mathematical Model & Probability Method | Scenarios Handled (From Normal to Extreme) | Beginner Takeaway |
 | :--- | :--- | :--- | :--- |
-| **`nse_timemachine.py` (Intraday ORB)** | **Historical Bootstrapped Replay:** Replays actual 15m historical intraday bars from market open (09:15) to cutoff (15:15 IST) with spread slippage. | Resolves opening gap-ups, choppy sideways consolidation, false ORB breakouts, and sudden intraday flushes. | Tells you if buying the 15-minute high actually hits targets before the 15:15 square-off bell. |
-| **`nse_timemachine.py` (Swing Drift)** | **10,000-Path Monte Carlo Geometric Brownian Motion + ATR Jump Diffusion:** Simulates 10,000 possible price paths over 1-30 days factoring trend drift and volatility. | Handles extreme gap downs, volatility spikes, penny-stock whipsaws, and extended multi-week rallies. | Gives the exact mathematical probability (`Target-First %`) of reaching your target before hitting your stop. |
+| **`nse_timemachine.py` (Intraday ORB)** | **Historical Bootstrapped Replay:** Replays 10,000 bootstrapped sessions built from real 5m historical bars (time-of-day matched) from market open (09:15) to cutoff (15:15 IST) with 1-tick slippage, plus a 15m ORB replay over every past session. | Resolves opening gap-ups, choppy sideways consolidation, false ORB breakouts, and sudden intraday flushes. | Tells you if buying the 15-minute high actually hits targets before the 15:15 square-off bell. |
+| **`nse_timemachine.py` (Swing Drift)** | **10,000-Path Bootstrapped Daily Returns:** Simulates 10,000 price paths over N trading days (`--horizon-days`, default 10) by resampling the ticker's own 2-year daily return history (no parametric model). | Captures gap downs, volatility spikes and multi-week rallies only to the extent they occurred in the 2-year history. | Gives the exact mathematical probability (`Target-First %`) of reaching your target before hitting your stop. |
 | **`nse_option_chain.py` (Greeks & Max Pain)** | **Black-Scholes Mathematical Engine:** Pure Python standard library implementation of Delta ($\Delta$), Gamma ($\Gamma$), Vega ($\nu$), and Theta ($\Theta$ daily ₹ decay) with Put-Call Ratio (PCR) and strike-by-strike cumulative buyer payout minimization. | Resolves 0 DTE expiries without division-by-zero, extreme IV (0.001% to 500%), and deep ITM/OTM skew. | Pinpoints the **Max Pain Strike** where option writers profit most and calculates exact overnight theta decay per lot. |
-| **`nse_sector_scanner.py` (Breadth & RS)** | **Institutional Relative Strength (RS) Matrix:** Real-time relative strength differential of 9 sectoral indices against NIFTY 50 baseline combined with Advance/Decline (A/D) breadth ratio. | Identifies narrow rallies propped up by heavyweights vs. broad institutional participation across sectors. | Ensures you only take long breakouts in the top 2 outperforming sectors and avoid lagging sectors. |
-| **`indian_risk_gate.py` (Tax Sizing)** | **Deterministic Statutory Sizing:** Calculates 2026 STT (0.1% delivery, 0.025% intraday, 0.02% F&O futures), GST (18% on brokerage+SEBI+exchange), Stamp duty, and turnover fees. | Models penny stocks (Rs. 0.10) where taxes exceed gains, micro-stops (5 paise) creating massive tax drag, and large portfolios (Rs. 1 Crore). | Tells you the **Tax Breakeven Price** — the minimum price move needed just to pay the government and broker. |
-| **`tv_indicators.py` (Cloud Stance)** | **Cloud Confluence Consensus:** Aggregates 11 oscillators and 15 moving averages on TradingView servers into a continuous numerical score (`-1.0` Strong Sell to `+1.0` Strong Buy). | Avoids local lagging indicators; filters out false divergence and overbought traps during strong institutional trends. | Gives a single, unbiased consensus badge (`BUY`, `SELL`, or `NEUTRAL`) in ~150ms with 0% CPU load. |
+| **`nse_sector_scanner.py` (Breadth & RS)** | **Sector Relative Strength (RS) Matrix:** Daily % change of one lead stock per sector (9 sectors, via TradingView) relative to the average of all 9, combined with an Advance/Decline breadth ratio. Lead stocks are a proxy, not the sectoral indices themselves. | Identifies narrow rallies propped up by heavyweights vs. broad institutional participation across sectors. | Ensures you only take long breakouts in the top 2 outperforming sectors and avoid lagging sectors. |
+| **`indian_risk_gate.py` (Tax Sizing)** | **Deterministic Statutory Sizing:** Calculates 2026 STT (0.1% delivery, 0.025% intraday, 0.05% futures, 0.15% options), GST (18% on brokerage+SEBI+exchange), Stamp duty, and turnover fees. | Models penny stocks (Rs. 0.10) where taxes exceed gains, micro-stops (5 paise) creating massive tax drag, and large portfolios (Rs. 1 Crore). | Tells you the **Tax Breakeven Price** — the minimum price move needed just to pay the government and broker. |
+| **`tv_indicators.py` (Cloud Stance)** | **Cloud Confluence Consensus:** Aggregates TradingView's oscillator and moving-average ratings (computed on TradingView servers via its unofficial scanner endpoint) into a continuous numerical score (`-1.0` Strong Sell to `+1.0` Strong Buy). | Avoids local lagging indicators; filters out false divergence and overbought traps during strong institutional trends. | Gives a single, unbiased consensus badge (`BUY`, `SELL`, or `NEUTRAL`) without local indicator computation (requires network access). |
 | **`nse_alerts.py` (Dynamic Watch)** | **Deterministic Threshold Engine:** Real-time polling against bid/ask ticks with sound frequency modulation (`winsound` / terminal beeps). | Handles circuit lockouts, flash crashes, target gap-overs, and non-bracket orders across 9 brokers. | Never miss an exit when your broker doesn't support bracket orders (e.g. Zerodha/Groww). |
-
----
 
 ---
 
@@ -202,8 +252,12 @@ The suite includes dedicated mathematical simulation scripts designed to protect
   tables (with automatic ASCII & Windows VT100 fallback, plus `NO_COLOR`/`FORCE_COLOR` support), progress bars, Indian
   lakh/crore INR formatting, status badges (`PASS`/`BLOCK`/`OPEN`/`CLOSED`), and plain-English callouts. Pass
   `--json` anytime for raw structured JSON.
-- **Optional Packages (`requirements.txt`):** `pytest` for running the test suite, `requests`, and optional
-  `smartapi-python` / `pyotp` if you prefer Angel One's official SDK transport over the built-in direct REST client.
+- **Optional Packages (`requirements.txt`):** `pytest` for running the test suite. `smartapi-python` / `pyotp` are
+  listed (commented out) for anyone who prefers Angel One's official SDK transport over the built-in direct REST client.
+- **Network-Dependent Features:** `tv_indicators.py`, `scan_watchlist.py`, `nse_sector_scanner.py` and
+  `tv_mcp_server.py` need no extra packages but call TradingView's unofficial scanner endpoint;
+  `nse_option_chain.py` calls the NSE option-chain API and falls back to a clearly labelled synthetic chain when
+  blocked.
 
 ### 2. Multi-Timeframe NSE/BSE Technical & Structure Loader (`nse_data_loader.py`)
 
@@ -446,7 +500,7 @@ Once installed in your AI IDE, talk naturally:
 "Run the 10,000-path Time Machine on SBIN: entry 850, stop 843, target 862"
 "Calculate exact INR position size and 2026 taxes for HDFCBANK with Rs. 1,00,000 capital"
 "Check NIFTY and BANKNIFTY multi-timeframe confluence and Fibonacci golden pocket"
-"Stage a paper trade on Zerodha for TATAMOTORS and show the broker payload"
+"Stage a paper trade on Zerodha for TMPV and show the broker payload"
 "Show today's SQLite paper trading ledger and remaining daily drawdown budget"
 ```
 
@@ -479,7 +533,7 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 .\trade.ps1 NIFTY -Entry 24000 -Stop 23800 -Target 24400 -Segment FNO_FUT -Broker zerodha
 
 # 6. Skip news for a faster run, or launch live alert watch at the end
-.\trade.ps1 TATAMOTORS -Entry 820 -Stop 800 -Target 860 -SkipNews
+.\trade.ps1 TMPV -Entry 420 -Stop 410 -Target 440 -SkipNews
 .\trade.ps1 BANKBARODA -WatchAlerts
 ```
 
@@ -558,7 +612,7 @@ python .agents/skills/nse-bse-hybrid-trader/scripts/broker_bridge.py stage \
 
 ## Automated Tests
 
-Run the full 18-test offline unit & integration suite (synthetic NSE 5m/1d fixtures, Indian news/SEBI/RBI/BSE RSS &
+Run the full 68-test offline unit & integration suite (synthetic NSE 5m/1d fixtures, Indian news/SEBI/RBI/BSE RSS &
 XXE sanitization, 2-stage scanner & T2T filtering, IST clock & SQLite ledger alerts, RFC-6238 TOTP vectors, ScripMaster
 CSV/JSON/GZIP parsing, SQLite paper ledger, tamper-fingerprint rejection, mocked live HTTP dispatch across all 9
 brokers, and stdlib terminal UI / ASCII fallback checks):
@@ -599,9 +653,15 @@ capital, inspect every file yourself:
 | [scripts/indian_risk_gate.py](.agents/skills/nse-bse-hybrid-trader/scripts/indian_risk_gate.py) | Position sizing decrement loop, statutory charge formula, daily drawdown SQLite query, circuit/F&O ban/ASM/IST blocks, and SHA-256 fingerprint |
 | [scripts/broker_bridge.py](.agents/skills/nse-bse-hybrid-trader/scripts/broker_bridge.py) | **CRITICAL:** Inspect `build_broker_payload()`, `_dispatch_*_live()`, and `_strip_attached_fields()`. Non-bracket orders (`zerodha`, `upstox`, `dhan`, `groww`, `kotak_neo`, `icici_breeze`, `shoonya`, `angel_one` `NORMAL`, `fyers` non-BO) record `attached_stoploss_trigger` / `attached_target_price` in the staged ticket and strip them on live entry dispatch — **you must place and verify separate stop-loss/GTT/target orders directly with your broker** |
 | [scripts/smartapi_bridge.py](.agents/skills/nse-bse-hybrid-trader/scripts/smartapi_bridge.py) | Backward-compatible `angel_one` facade delegating to `broker_bridge.py` |
+| [scripts/nse_option_chain.py](.agents/skills/nse-bse-hybrid-trader/scripts/nse_option_chain.py) | NSE API fetch, **synthetic-chain fallback** (check the banner), Black-Scholes Greeks, PCR, Max Pain, and `INDEX_LOT_SIZES` |
+| [scripts/nse_sector_scanner.py](.agents/skills/nse-bse-hybrid-trader/scripts/nse_sector_scanner.py) | Sector lead-stock map (`SECTOR_MAP`), relative-strength benchmark (average of sector leads) and breadth logic |
+| [scripts/tv_indicators.py](.agents/skills/nse-bse-hybrid-trader/scripts/tv_indicators.py) | TradingView scanner request fields, timeframe suffixes and consensus scoring |
+| [scripts/tv_mcp_server.py](.agents/skills/nse-bse-hybrid-trader/scripts/tv_mcp_server.py) | MCP server exposing the TradingView indicator tools to AI agents |
+| [menu.py](menu.py) / [run_all.py](run_all.py) | Interactive menu and cross-platform pipeline; note the auto-coordinate defaults (-5% stop / +10% target) |
+| [scan_watchlist.py](scan_watchlist.py) | Built-in symbol pools and BUY/SELL stance filtering |
 | [references/technical_frameworks.md](.agents/skills/nse-bse-hybrid-trader/references/technical_frameworks.md) | 3-screen MTF rules, trailing stop stages, and portfolio concentration guidelines |
 | [references/indian_market_rules.md](.agents/skills/nse-bse-hybrid-trader/references/indian_market_rules.md) | Session windows, regulatory notes, tax tables, and broker API reference |
-| [tests/test_hybrid_trader.py](tests/test_hybrid_trader.py) | Offline test fixtures, assertions, and mocked HTTP checks |
+| [tests/test_hybrid_trader.py](tests/test_hybrid_trader.py) / [tests/test_all_edge_cases.py](tests/test_all_edge_cases.py) | Offline test fixtures, assertions, mocked HTTP checks and edge-case matrix |
 | [trade.ps1](trade.ps1) | Windows PowerShell 6-step pipeline launcher wrapping all scripts above |
 | [.env.example](.env.example) | Broker environment variable names (copy to `.env` locally; never commit `.env`) |
 
@@ -624,9 +684,15 @@ capital, inspect every file yourself:
   volatility spikes can fill orders well beyond your stop price.
 - **Free & Unofficial Market Data:** Built-in live candles use Yahoo Finance's unofficial chart endpoint
   (`5m`/`1d`/`1wk`), which can lag, change, rate-limit (`HTTP 429`), or differ slightly from NSE/BSE exchange feeds.
+  Indicator, watchlist and sector scans use TradingView's unofficial scanner endpoint, and option chains use the NSE
+  website API (often blocked; the tool then shows a labelled synthetic chain). Any of these can break without notice.
   Always verify live quotes, margins, freeze quantities, and circuit bands on your broker terminal before acting.
 - **Taxes, Fees & Holidays Change:** Indian STT rates, exchange transaction fees, DP charges, broker plans, and NSE/BSE
   holidays change periodically. Keep `config/trading_rules.json` and `config/nse_holidays.json` updated.
+  `nse_holidays.json` currently covers **2026 only** — add the official 2027 list once NSE publishes it (usually in
+  December). Until then, `nse_alerts.py clock` and `indian_risk_gate.py` print a warning for uncovered years.
+- **Lot Sizes & Expiries Change:** Index lot sizes and weekly-expiry availability are revised by NSE/SEBI. Verify
+  them on the exchange before sizing F&O trades.
 - **Keep Secrets Local:** Broker API keys, MPINs, and TOTP secrets belong only in your local `.env` file (which is
   gitignored). Never paste credentials into AI chats or commit them to GitHub.
 
@@ -639,7 +705,7 @@ capital, inspect every file yourself:
 ├── .agents/skills/nse-bse-hybrid-trader/
 │   ├── SKILL.md                          # Core AI agent workflow & safety rules
 │   ├── config/
-│   │   ├── nse_holidays.json             # 2026 NSE/BSE holidays & Muhurat session
+│   │   ├── nse_holidays.json             # 2026 NSE/BSE holidays & Muhurat session (add 2027 when published)
 │   │   └── trading_rules.json            # Risk caps, IST windows, 2026 taxes, 9 broker profiles
 │   ├── references/
 │   │   ├── indian_market_rules.md        # IST sessions, SEBI rules & broker API matrix
@@ -648,9 +714,10 @@ capital, inspect every file yourself:
 │       ├── nse_common.py                 # IST clock, Decimal Rs. 0.05 ticks, Yahoo Spark/v8 & F&O ban helpers
 │       ├── nse_ui.py                     # Stdlib terminal tables, banners, progress bars & Indian INR formatters
 │       ├── nse_scanner.py                # Universe builder, BE/BZ filter & 2-stage daily / 15m ORB+VWAP scanner
-│       ├── nse_sector_scanner.py         # Sector relative strength vs. NIFTY & institutional breadth heatmap
-│       ├── nse_option_chain.py           # Live NSE option chains, Black-Scholes Greeks (Delta/Gamma/Theta/Vega) & Max Pain
+│       ├── nse_sector_scanner.py         # Sector lead-stock relative strength & breadth heatmap
+│       ├── nse_option_chain.py           # NSE option chain (labelled synthetic fallback), Black-Scholes Greeks & Max Pain
 │       ├── tv_indicators.py              # 32+ TradingView cloud indicators with multi-timeframe batching
+│       ├── tv_mcp_server.py              # MCP server exposing TradingView indicator tools to agents
 │       ├── nse_news.py                   # Google News IN, ET/LiveMint/SEBI/RBI/BSE RSS, F&O ban & move monitor
 │       ├── nse_alerts.py                 # IST clock, SQLite paper_orders SL/TP/15:10 flatten & live watch loop
 │       ├── nse_data_loader.py            # MTF indicators, VWAP, 15m ORB, Fib, divergence, --with-news & score
@@ -662,7 +729,7 @@ capital, inspect every file yourself:
 │   ├── marketplace.json                  # Claude Code plugin marketplace manifest
 │   └── plugin.json                       # Plugin package metadata
 ├── tests/
-│   ├── test_all_edge_cases.py            # 48 exhaustive edge-case, boundary & 36-matrix tests
+│   ├── test_all_edge_cases.py            # 48 edge-case & boundary tests (13 functions incl. a 36-case segment×broker matrix)
 │   └── test_hybrid_trader.py             # 20 core unit & integration tests (68/68 total green)
 ├── .env.example                          # Template for local broker API keys (never commit .env)
 ├── .gitignore                            # Ignores .env, *.db, state/, caches

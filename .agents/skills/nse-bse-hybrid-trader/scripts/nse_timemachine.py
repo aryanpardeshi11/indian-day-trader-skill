@@ -6,7 +6,7 @@ Indian statutory tax-adjusted Expected Value.
 
 Usage:
     python scripts/nse_timemachine.py --symbol "RELIANCE.NS" --entry 1324 --stop 1310 --target 1352 --mode INTRADAY
-    python scripts/nse_timemachine.py --symbol "TATAMOTORS.NS" --entry 785 --stop 778 --target 798 --mode INTRADAY --write --json
+    python scripts/nse_timemachine.py --symbol "TMPV.NS" --entry 785 --stop 778 --target 798 --mode INTRADAY --write --json
 """
 
 from __future__ import annotations
@@ -687,7 +687,7 @@ def format_human_tm(res: dict[str, Any], color: bool | None = None) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="NSE/BSE Monte Carlo Intraday/Swing Time Machine")
-    p.add_argument("--symbol", required=True, help="Ticker (e.g., RELIANCE.NS, TATAMOTORS.NS, NIFTY)")
+    p.add_argument("--symbol", required=True, help="Ticker (e.g., RELIANCE.NS, TMPV.NS, NIFTY)")
     p.add_argument("--entry", type=float, required=True, help="Planned entry price")
     p.add_argument("--stop", type=float, required=True, help="Stop-loss price")
     p.add_argument("--target", type=float, required=True, help="Target price")

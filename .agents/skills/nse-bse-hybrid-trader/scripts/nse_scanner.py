@@ -34,6 +34,7 @@ if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
 from nse_common import (
+    script_cmd,
     DEFAULT_STATE_DIR,
     NSETraderError,
     extract_chart_result,
@@ -109,7 +110,7 @@ BUILTIN_NIFTY50_SYMBOLS = [
     ("SHRIRAMFIN", "Shriram Finance Ltd.", "Financial Services"),
     ("SUNPHARMA", "Sun Pharmaceutical Industries Ltd.", "Healthcare"),
     ("TATACONSUM", "Tata Consumer Products Ltd.", "Fast Moving Consumer Goods"),
-    ("TATAMOTORS", "Tata Motors Ltd.", "Automobile and Auto Components"),
+    ("TMPV", "Tata Motors Passenger Vehicles Ltd.", "Automobile and Auto Components"),
     ("TATASTEEL", "Tata Steel Ltd.", "Metals & Mining"),
     ("TCS", "Tata Consultancy Services Ltd.", "Information Technology"),
     ("TECHM", "Tech Mahindra Ltd.", "Information Technology"),
@@ -1137,7 +1138,7 @@ def format_scanner_report(data: dict[str, Any], color: bool | None = None) -> st
                     "RVOL >= 1.5x = higher-than-usual buying/selling volume today; RSI 55-70 = strong momentum.",
                     "BE/BZ Trade-to-Trade scrips are auto-filtered out (no intraday leverage allowed by SEBI).",
                     f"Note: {data.get('note', '')}",
-                    "Next step: Pick 1 symbol and run: python scripts/nse_data_loader.py --symbol <SYMBOL> --with-news",
+                    f"Next step: Pick 1 symbol and run: {script_cmd('nse_data_loader.py')} --symbol <SYMBOL> --with-news",
                 ],
                 tone_name="info",
             )

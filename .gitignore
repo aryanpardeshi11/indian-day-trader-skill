@@ -13,7 +13,6 @@ venv/
 *.sqlite
 *.sqlite3
 .agents/skills/nse-bse-hybrid-trader/state/
-trader/
 
 # OS
 .DS_Store

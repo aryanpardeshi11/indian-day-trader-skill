@@ -4,7 +4,7 @@ NSE Sector Rotation & Market Breadth Heatmap Scanner (`nse_sector_scanner.py`).
 Tracks institutional money flow across major Indian sectoral indices:
   - Banking & Financials (HDFCBANK, ICICIBANK, KOTAKBANK)
   - Technology & IT (TCS, INFY, HCLTECH)
-  - Automotive & Mobility (TATAMOTORS, M&M, MARUTI)
+  - Automotive & Mobility (MARUTI, M&M, TMPV)
   - Pharma & Healthcare (SUNPHARMA, CIPLA, DRREDDY)
   - Metals & Mining (TATASTEEL, JSWSTEEL, HINDALCO)
   - Real Estate & Infrastructure (DLF, GODREJPROP, OBEROIRLTY)
@@ -61,8 +61,8 @@ SECTOR_MAP: list[dict[str, Any]] = [
     {
         "name": "NIFTY AUTO",
         "category": "Automotive & EV",
-        "lead_ticker": "NSE:TATAMOTORS",
-        "key_stocks": ["TATAMOTORS", "M&M", "MARUTI", "BAJAJ-AUTO"],
+        "lead_ticker": "NSE:MARUTI",
+        "key_stocks": ["MARUTI", "M&M", "TMPV", "MARUTI", "BAJAJ-AUTO"],
     },
     {
         "name": "NIFTY PHARMA",

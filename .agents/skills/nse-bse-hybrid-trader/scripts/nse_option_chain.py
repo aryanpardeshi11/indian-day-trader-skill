@@ -41,13 +41,15 @@ for p in POSSIBLE_PATHS:
 import nse_common
 from nse_ui import UI, safe_print
 
-# Lot sizes for major Indian indices
+# Lot sizes for major Indian indices (NSE revision effective from the Jan 2026
+# contracts). Exchanges revise these periodically -- verify against NSE
+# fo_mktlots.csv / BSE circulars before sizing real trades.
 INDEX_LOT_SIZES: dict[str, int] = {
-    "NIFTY": 25,
-    "BANKNIFTY": 15,
-    "FINNIFTY": 25,
-    "MIDCPNIFTY": 50,
-    "SENSEX": 10,
+    "NIFTY": 65,
+    "BANKNIFTY": 30,
+    "FINNIFTY": 60,
+    "MIDCPNIFTY": 120,
+    "SENSEX": 20,
     "BANKEX": 15,
 }
 
@@ -387,11 +389,25 @@ def render_option_chain_report(
     # Print Banner
     safe_print("")
     safe_print(ui.banner(
-        title=f"NSE LIVE OPTION CHAIN & GREEKS ANALYTICS  •  {clean_sym}",
+        title=(
+            f"SYNTHETIC (MODELLED) OPTION CHAIN & GREEKS  •  {clean_sym}"
+            if is_synthesized
+            else f"NSE LIVE OPTION CHAIN & GREEKS ANALYTICS  •  {clean_sym}"
+        ),
         subtitle=f"Spot Price: Rs. {spot:,.2f}  |  Expiry: {expiry_date} ({days_to_expiry} Days)  |  Lot Size: {lot_size}",
         badge=f"PCR: {pcr_data['pcr_oi']}",
         badge_tone="green" if pcr_data["stance"] == "BULLISH" else ("red" if pcr_data["stance"] == "BEARISH" else "yellow"),
     ))
+    if is_synthesized:
+        safe_print(ui.callout(
+            "Synthetic data -- not a live NSE option chain",
+            [
+                "The NSE option-chain API could not be reached (it often blocks scripted requests with HTTP 403).",
+                "Open interest, volume, PCR, Max Pain and OI walls below are MODELLED, not real market data.",
+                "Greeks are Black-Scholes estimates. Verify everything on your broker terminal before trading.",
+            ],
+            tone_name="warn",
+        ))
 
     # Summary Metrics Table
     summary_headers = ["Metric / Indicator", "Current Value", "Institutional Reading & Implication"]

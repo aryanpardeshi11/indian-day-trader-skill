@@ -327,7 +327,7 @@ def run_all(
     if has_coords:
         safe_print("  To stage this order safely in the local paper ledger, copy and run:")
         safe_print(ui.bold(ui.green(
-            f"  python scripts/broker_bridge.py stage --broker {broker} --symbol {norm_symbol} "
+            f"  {nse_common.script_cmd('broker_bridge.py')} stage --broker {broker} --symbol {norm_symbol} "
             f"--segment {segment} --entry {entry} --stop {stop} --target {target} --paper"
         )))
         safe_print("")
@@ -367,7 +367,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--entry", type=float, default=None, help="Planned entry price in INR")
     p.add_argument("--stop", type=float, default=None, help="Stop loss price in INR")
     p.add_argument("--target", type=float, default=None, help="Target price in INR")
-    p.add_argument("--lot-size", type=int, default=None, help="Contract lot size for F&O (e.g. 25 for NIFTY, 15 for BANKNIFTY)")
+    p.add_argument("--lot-size", type=int, default=None, help="Contract lot size for F&O (e.g. 65 for NIFTY, 30 for BANKNIFTY)")
     p.add_argument("--capital", type=float, default=50000.0, help="Account trading capital in INR")
     p.add_argument("--risk-pct", type=float, default=1.0, help="Max capital risk percentage (0.5%% - 2.0%%)")
     p.add_argument("--segment", choices=["EQ_DELIVERY", "EQ_INTRADAY", "FNO_FUT", "FNO_OPT"], default="EQ_DELIVERY", help="Trading segment")

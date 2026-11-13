@@ -20,7 +20,7 @@
   .\trade.ps1 TCS -Entry 3800 -Stop 3760 -Target 3880 -Mode INTRADAY -Segment EQ_INTRADAY
 
   # Skip news for faster run
-  .\trade.ps1 TATAMOTORS -Entry 820 -Stop 800 -Target 860 -SkipNews
+  .\trade.ps1 TMPV -Entry 820 -Stop 800 -Target 860 -SkipNews
 
   # With live watch after staging
   .\trade.ps1 BANKBARODA -WatchAlerts

@@ -473,7 +473,7 @@ def interactive_custom_trade_sizer() -> None:
         mode_choice = input("  Choice (1 or 2, Default: 1): ").strip() or "1"
         if mode_choice == "1":
             safe_print("\n  Paste your parameter string below and press Enter:")
-            safe_print(ui.dim("  Example: --symbol NIFTY26NOV25600CE --segment FNO_OPT --entry 65 --stop 45 --target 105 --lot-size 25 --capital 100000 --risk-pct 1.0 --broker zerodha"))
+            safe_print(ui.dim("  Example: --symbol NIFTY26NOV25600CE --segment FNO_OPT --entry 65 --stop 45 --target 105 --lot-size 65 --capital 100000 --risk-pct 1.0 --broker zerodha"))
             cmd_line = input("  >> ").strip()
             if not cmd_line:
                 safe_print(ui.yellow("No input provided."))
@@ -671,37 +671,37 @@ def interactive_menu() -> None:
     python scan_watchlist.py --file my_stocks.txt --segment FNO_OPT
 
   TradingView Cloud Indicators (Zero Local Compute):
-    python scripts/tv_indicators.py --symbol SUZLON --indicators RSI MACD ADX VWAP EMA200
-    python scripts/tv_indicators.py --symbol NIFTY --timeframe 15m --indicators RSI STOCH_K VWAP
+    python .agents/skills/nse-bse-hybrid-trader/scripts/tv_indicators.py --symbol SUZLON --indicators RSI MACD ADX VWAP EMA200
+    python .agents/skills/nse-bse-hybrid-trader/scripts/tv_indicators.py --symbol NIFTY --timeframe 15m --indicators RSI STOCH_K VWAP
 
   Market Scanners:
-    python scripts/nse_scanner.py daily --pool nifty50
-    python scripts/nse_scanner.py orb   --pool nifty50
+    python .agents/skills/nse-bse-hybrid-trader/scripts/nse_scanner.py daily --pool nifty50
+    python .agents/skills/nse-bse-hybrid-trader/scripts/nse_scanner.py orb   --pool nifty50
 
   Financial & Regulatory News:
-    python scripts/nse_news.py --tickers SUZLON --hours 72
+    python .agents/skills/nse-bse-hybrid-trader/scripts/nse_news.py --tickers SUZLON --hours 72
 
   Monte Carlo Time Machine:
-    python scripts/nse_timemachine.py --symbol SUZLON.NS --entry 54.81 --stop 50.0 --target 62.0
+    python .agents/skills/nse-bse-hybrid-trader/scripts/nse_timemachine.py --symbol SUZLON.NS --entry 54.81 --stop 50.0 --target 62.0
 
   Risk Gate & 2026 Statutory Charges:
-    python scripts/indian_risk_gate.py --symbol SUZLON --capital 50000 --entry 54.81 --stop 50.0 --target 62.0
+    python .agents/skills/nse-bse-hybrid-trader/scripts/indian_risk_gate.py --symbol SUZLON --capital 50000 --entry 54.81 --stop 50.0 --target 62.0
 
   Order Staging (Paper / Live):
-    python scripts/broker_bridge.py stage --broker zerodha --symbol SUZLON --entry 54.81 --stop 50.0 --target 62.0 --paper
-    python scripts/broker_bridge.py ledger
+    python .agents/skills/nse-bse-hybrid-trader/scripts/broker_bridge.py stage --broker zerodha --symbol SUZLON --entry 54.81 --stop 50.0 --target 62.0 --paper
+    python .agents/skills/nse-bse-hybrid-trader/scripts/broker_bridge.py ledger
 
   Market Clock & Alerts:
-    python scripts/nse_alerts.py clock
-    python scripts/nse_alerts.py watch --interval 30 --until 15:15 --beep
+    python .agents/skills/nse-bse-hybrid-trader/scripts/nse_alerts.py clock
+    python .agents/skills/nse-bse-hybrid-trader/scripts/nse_alerts.py watch --interval 30 --until 15:15 --beep
 
   Option Chain, Greeks & Max Pain Analytics:
-    python scripts/nse_option_chain.py NIFTY
-    python scripts/nse_option_chain.py BANKNIFTY --expiry-days 3
-    python scripts/nse_option_chain.py RELIANCE
+    python .agents/skills/nse-bse-hybrid-trader/scripts/nse_option_chain.py NIFTY
+    python .agents/skills/nse-bse-hybrid-trader/scripts/nse_option_chain.py BANKNIFTY --expiry-days 12
+    python .agents/skills/nse-bse-hybrid-trader/scripts/nse_option_chain.py RELIANCE
 
   Sector Rotation & Market Breadth Heatmap Scanner:
-    python scripts/nse_sector_scanner.py
+    python .agents/skills/nse-bse-hybrid-trader/scripts/nse_sector_scanner.py
 """)
             safe_print(ui.disclaimer())
             input("\nPress Enter to return to menu...")
