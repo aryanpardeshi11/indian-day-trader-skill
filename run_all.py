@@ -327,7 +327,7 @@ def run_all(
     if has_coords:
         safe_print("  To stage this order safely in the local paper ledger, copy and run:")
         safe_print(ui.bold(ui.green(
-            f"  python scripts/broker_bridge.py stage --broker {broker} --symbol {norm_symbol} "
+            f"  {nse_common.script_cmd('broker_bridge.py')} stage --broker {broker} --symbol {norm_symbol} "
             f"--segment {segment} --entry {entry} --stop {stop} --target {target} --paper"
         )))
         safe_print("")

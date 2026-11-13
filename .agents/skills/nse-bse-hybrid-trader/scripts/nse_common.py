@@ -10,6 +10,7 @@ import datetime
 import gzip
 import http.client
 import json
+import os
 import re
 import time
 import urllib.error
@@ -50,6 +51,19 @@ def _find_dir(sub: str) -> Path:
 
 CONFIG_DIR = _find_dir("config")
 DEFAULT_STATE_DIR = _find_dir("state")
+
+
+def display_path(path: Path | str) -> str:
+    """Return *path* relative to the current directory when possible (for copy-pasteable hints)."""
+    try:
+        return os.path.relpath(Path(path))
+    except ValueError:  # e.g. different drive on Windows
+        return str(path)
+
+
+def script_cmd(script_name: str) -> str:
+    """Return a ``python <path>`` prefix for a skill script that works from the current directory."""
+    return f"python {display_path(SCRIPT_DIR / script_name)}"
 
 INDEX_ALIASES = {
     "NIFTY": ("^NSEI", "NSE", "NIFTY"),

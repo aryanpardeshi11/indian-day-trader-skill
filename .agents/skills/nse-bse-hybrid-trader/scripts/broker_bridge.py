@@ -56,6 +56,7 @@ from indian_risk_gate import (
     infer_side,
 )
 from nse_common import (
+    script_cmd,
     DEFAULT_STATE_DIR,
     SUPPORTED_BROKERS,
     NSETraderError,
@@ -1984,8 +1985,8 @@ def format_broker_output(command: str, out: dict[str, Any], color: bool | None =
                 ui.callout(
                     "Beginner Next Steps (Paper Trade Active)",
                     [
-                        "Register SL, Target & 15:10 IST alerts: python scripts/nse_alerts.py add --from-ledger --ist-bell",
-                        f"Close when target/stop hits: python scripts/broker_bridge.py close --trade-id {out.get('trade_id', 1)} --exit-price <PRICE> --reason TARGET",
+                        f"Register SL, Target & 15:10 IST alerts: {script_cmd('nse_alerts.py')} add --from-ledger --ist-bell",
+                        f"Close when target/stop hits: {script_cmd('broker_bridge.py')} close --trade-id {out.get('trade_id', 1)} --exit-price <PRICE> --reason TARGET",
                     ],
                     tone_name="info",
                 )

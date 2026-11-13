@@ -23,6 +23,8 @@ if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
 from nse_common import (
+    display_path,
+    script_cmd,
     DEFAULT_STATE_DIR,
     SUPPORTED_BROKERS,
     NSETraderError,
@@ -648,7 +650,7 @@ def format_human_verdict(res: dict[str, Any], color: bool | None = None) -> str:
                 "Approved - Next Step",
                 [
                     f"Gate PASSED (Fingerprint: {res['fingerprint']}).",
-                    "Stage a risk-free paper order: python scripts/broker_bridge.py stage --risk-json state/risk_verdict.json --paper",
+                    f"Stage a risk-free paper order: {script_cmd('broker_bridge.py')} stage --risk-json {display_path(DEFAULT_STATE_DIR / 'risk_verdict.json')} --paper",
                 ],
                 tone_name="good",
             )
