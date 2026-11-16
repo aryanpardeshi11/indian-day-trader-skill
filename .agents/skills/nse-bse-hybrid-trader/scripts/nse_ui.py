@@ -284,15 +284,19 @@ class UI:
         label = f" {text} "
         if not self.color:
             return f"[{text}]"
+        # Fixed xterm-256 colors (38;5 / 48;5) instead of the 16 basic ANSI colors: terminal themes
+        # remap the basic palette (e.g. "yellow" bg -> muted orange, "black" fg -> dim grey), which made
+        # pills unreadable. 256-color indices are not themed, so contrast is guaranteed.
+        black_fg, white_fg = "38;5;16", "38;5;231"
         t = tone_name.lower()
         if t in ("good", "green", "pass", "bull", "bullish", "ok", "profit"):
-            return self.style(label, "1", "30", "42")
+            return self.style(label, "1", black_fg, "48;5;40")
         if t in ("bad", "red", "block", "fail", "no-trade", "bear", "bearish", "loss"):
-            return self.style(label, "1", "97", "41")
+            return self.style(label, "1", white_fg, "48;5;160")
         if t in ("warn", "yellow", "neutral", "caution"):
-            return self.style(label, "1", "30", "43")
+            return self.style(label, "1", black_fg, "48;5;220")
         if t in ("info", "cyan", "accent"):
-            return self.style(label, "1", "30", "46")
+            return self.style(label, "1", black_fg, "48;5;44")
         return self.style(label, "1", "7")
 
     def trend_pct(self, pct: float | None) -> str:
