@@ -396,7 +396,7 @@ def test_smartapi_scrip_cache_totp_and_paper_ledger(tmp_path: Path) -> None:
     assert lk["token"] == "2885"
     assert lk["lookup_ms"] < 50.0
 
-    # Stage paper trade & prevent live execution without CONFIRM LIVE
+    # Stage paper trade & confirm live execution is always blocked (paper-only bundle)
     staged = stage_or_execute_order(
         symbol="RELIANCE",
         entry=1324.0,
@@ -413,7 +413,7 @@ def test_smartapi_scrip_cache_totp_and_paper_ledger(tmp_path: Path) -> None:
     assert staged["smartapi_payload"]["variety"] == "ROBO"
     assert staged["smartapi_payload"]["symboltoken"] == "2885"
 
-    with pytest.raises(Exception, match="CONFIRM LIVE"):
+    with pytest.raises(NSETraderError, match="LIVE_BLOCKED"):
         stage_or_execute_order(
             symbol="RELIANCE",
             entry=1324.0,
@@ -421,7 +421,7 @@ def test_smartapi_scrip_cache_totp_and_paper_ledger(tmp_path: Path) -> None:
             target=1352.0,
             segment="EQ_INTRADAY",
             live=True,
-            confirm_phrase="yes",
+            confirm_phrase="CONFIRM LIVE",
             now_str="2026-11-09 10:15",
             state_dir=tmp_path,
         )
@@ -729,7 +729,7 @@ def test_multi_broker_charge_profiles_and_normalization() -> None:
     assert angel_small["brokerage"] == 10.0  # min Rs. 5 per leg floor
 
 
-def test_multi_broker_scrip_sync_payloads_and_live_dispatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_multi_broker_scrip_sync_payloads_and_live_blocked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # 1. Zerodha CSV instrument sync & lookup
     kite_csv = tmp_path / "zerodha.csv"
     kite_csv.write_text(
@@ -867,125 +867,31 @@ def test_multi_broker_scrip_sync_payloads_and_live_dispatch(tmp_path: Path, monk
     assert kotak_only["count"] == 1
     assert kotak_only["trades"][0]["broker"] == "kotak_neo"
 
-    # 5. Mocked live HTTP dispatch verifying exact headers & payloads across ALL 9 brokers (offline)
+    # 5. Live dispatch is disabled in this bundle: every broker must raise LIVE_BLOCKED,
+    #    even with credentials present and the exact confirm phrase, and no HTTP call may be made.
     monkeypatch.setenv("ZERODHA_API_KEY", "zkey")
     monkeypatch.setenv("ZERODHA_ACCESS_TOKEN", "ztok")
-    monkeypatch.setenv("UPSTOX_ACCESS_TOKEN", "utok")
-    monkeypatch.setenv("DHAN_CLIENT_ID", "dcli")
-    monkeypatch.setenv("DHAN_ACCESS_TOKEN", "dtok")
-    monkeypatch.setenv("FYERS_APP_ID", "fapp")
-    monkeypatch.setenv("FYERS_ACCESS_TOKEN", "ftok")
-    monkeypatch.setenv("GROWW_ACCESS_TOKEN", "gtok")
-    monkeypatch.setenv("KOTAK_ACCESS_TOKEN", "ktok")
-    monkeypatch.setenv("KOTAK_SID", "ksid")
-    monkeypatch.setenv("ICICI_API_KEY", "ikey")
-    monkeypatch.setenv("ICICI_SECRET_KEY", "isecret")
-    monkeypatch.setenv("ICICI_SESSION_TOKEN", "isess")
-    monkeypatch.setenv("SHOONYA_USER_ID", "suid")
-    monkeypatch.setenv("SHOONYA_SESSION_TOKEN", "ssess")
     monkeypatch.setenv("ANGEL_API_KEY", "akey")
     monkeypatch.setenv("ANGEL_CLIENT_CODE", "acode")
     monkeypatch.setenv("ANGEL_MPIN", "1234")
     monkeypatch.setenv("ANGEL_TOTP_SECRET", "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
-    captured: list[tuple[str, dict[str, str], bytes]] = []
+    captured: list[str] = []
 
     def _fake_urlopen(req: urllib.request.Request, timeout: int = 20) -> _DummyHTTPResp:
         _ = timeout
-        raw_data = req.data if isinstance(req.data, bytes) else b""
-        captured.append((req.full_url, {k.lower(): v for k, v in req.header_items()}, raw_data))
+        captured.append(req.full_url)
         return _DummyHTTPResp(b'{"status": true, "data": {"jwtToken": "ajwt", "order_id": "2611090001"}}')
 
+    brokers = ["zerodha", "icici_breeze", "upstox", "dhan", "fyers", "groww", "kotak_neo", "shoonya", "angel_one"]
     with patch("urllib.request.urlopen", side_effect=_fake_urlopen):
-        live_z = mb_stage_or_execute_order(
-            symbol="RELIANCE", entry=1324.0, stop=1310.0, target=1352.0,
-            segment="EQ_INTRADAY", live=True, confirm_phrase="CONFIRM LIVE",
-            now_str="2026-11-12 10:30", state_dir=tmp_path, broker="zerodha",
-        )
-        assert live_z["status"] == "DISPATCHED"
-        assert captured[-1][0] == "https://api.kite.trade/orders/regular"
-        assert captured[-1][1]["x-kite-version"] == "3"
-        assert captured[-1][1]["authorization"] == "token zkey:ztok"
-
-        live_ic = mb_stage_or_execute_order(
-            symbol="RELIANCE", entry=1324.0, stop=1310.0, target=1352.0,
-            segment="EQ_INTRADAY", live=True, confirm_phrase="CONFIRM LIVE",
-            now_str="2026-11-12 10:32", state_dir=tmp_path, broker="icici_breeze",
-        )
-        assert live_ic["status"] == "DISPATCHED"
-        assert captured[-1][0] == "https://api.icicidirect.com/breezeapi/api/v1/order"
-        assert captured[-1][1]["x-appkey"] == "ikey"
-        assert captured[-1][1]["x-sessiontoken"] == "isess"
-        assert captured[-1][1]["x-checksum"].startswith("token ")
-        assert len(captured[-1][1]["x-checksum"]) == 70
-
-        # Upstox (synced above -> succeeds)
-        live_up = mb_stage_or_execute_order(
-            symbol="RELIANCE", entry=1324.0, stop=1310.0, target=1352.0,
-            segment="EQ_INTRADAY", live=True, confirm_phrase="CONFIRM LIVE",
-            now_str="2026-11-12 10:34", state_dir=tmp_path, broker="upstox",
-        )
-        assert live_up["status"] == "DISPATCHED"
-        assert captured[-1][0] == "https://api-hft.upstox.com/v3/order/place"
-        assert captured[-1][1]["authorization"] == "Bearer utok"
-
-        # Dhan, Fyers, Groww, Kotak Neo, Shoonya
-        live_dh = mb_stage_or_execute_order(
-            symbol="RELIANCE", entry=1324.0, stop=1310.0, target=1352.0,
-            segment="EQ_INTRADAY", live=True, confirm_phrase="CONFIRM LIVE",
-            now_str="2026-11-12 10:35", state_dir=tmp_path, broker="dhan",
-        )
-        assert live_dh["status"] == "DISPATCHED"
-        assert captured[-1][1]["access-token"] == "dtok"
-
-        live_fy = mb_stage_or_execute_order(
-            symbol="RELIANCE", entry=1324.0, stop=1310.0, target=1352.0,
-            segment="EQ_INTRADAY", live=True, confirm_phrase="CONFIRM LIVE",
-            now_str="2026-11-12 10:36", state_dir=tmp_path, broker="fyers",
-        )
-        assert live_fy["status"] == "DISPATCHED"
-        assert captured[-1][1]["authorization"] == "fapp:ftok"
-
-        live_gr = mb_stage_or_execute_order(
-            symbol="RELIANCE", entry=1324.0, stop=1310.0, target=1352.0,
-            segment="EQ_INTRADAY", live=True, confirm_phrase="CONFIRM LIVE",
-            now_str="2026-11-12 10:37", state_dir=tmp_path, broker="groww",
-        )
-        assert live_gr["status"] == "DISPATCHED"
-        assert captured[-1][1]["x-api-version"] == "1.0"
-
-        live_kt = mb_stage_or_execute_order(
-            symbol="RELIANCE", entry=1324.0, stop=1310.0, target=1352.0,
-            segment="EQ_INTRADAY", live=True, confirm_phrase="CONFIRM LIVE",
-            now_str="2026-11-12 10:38", state_dir=tmp_path, broker="kotak_neo",
-        )
-        assert live_kt["status"] == "DISPATCHED"
-        assert captured[-1][1]["sid"] == "ksid"
-
-        live_sh = mb_stage_or_execute_order(
-            symbol="RELIANCE", entry=1324.0, stop=1310.0, target=1352.0,
-            segment="EQ_INTRADAY", live=True, confirm_phrase="CONFIRM LIVE",
-            now_str="2026-11-12 10:39", state_dir=tmp_path, broker="shoonya",
-        )
-        assert live_sh["status"] == "DISPATCHED"
-        assert b"jKey=ssess" in captured[-1][2]
-
-        # Angel One direct-REST fallback with symboltoken override
-        live_ao = mb_stage_or_execute_order(
-            symbol="RELIANCE", entry=1324.0, stop=1310.0, target=1352.0,
-            segment="EQ_INTRADAY", symboltoken="2885", live=True, confirm_phrase="CONFIRM LIVE",
-            now_str="2026-11-13 10:30", state_dir=tmp_path, broker="angel_one",
-        )
-        assert live_ao["status"] == "DISPATCHED"
-        assert captured[-1][0].endswith("/placeOrder")
-        assert captured[-1][1]["authorization"] == "Bearer ajwt"
-
-    # Token-required broker without synced token must block live dispatch
-    with pytest.raises(NSETraderError, match="requires symboltoken/instrument_token"):
-        mb_stage_or_execute_order(
-            symbol="INFY", entry=1500.0, stop=1490.0, target=1520.0,
-            segment="EQ_INTRADAY", live=True, confirm_phrase="CONFIRM LIVE",
-            now_str="2026-11-12 10:40", state_dir=tmp_path, broker="upstox",
-        )
+        for i, broker in enumerate(brokers):
+            with pytest.raises(NSETraderError, match="LIVE_BLOCKED"):
+                mb_stage_or_execute_order(
+                    symbol="RELIANCE", entry=1324.0, stop=1310.0, target=1352.0,
+                    segment="EQ_INTRADAY", symboltoken="2885", live=True, confirm_phrase="CONFIRM LIVE",
+                    now_str=f"2026-11-12 10:{30 + i:02d}", state_dir=tmp_path, broker=broker,
+                )
+    assert captured == []
 
 
 def test_legacy_db_migration_and_edge_cases(tmp_path: Path) -> None:

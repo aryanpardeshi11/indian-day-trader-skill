@@ -73,7 +73,7 @@ All statutory levies + per-broker fee overrides are enforced deterministically i
 
 ## 4. Multi-Broker Order API, Product Mapping & `.env` Credentials
 
-| Broker (`--broker`) | Endpoint & Format | Intraday Product | Delivery Product | F&O Product | Token Sync Mandatory | Required `.env` Variables (`--live`) |
+| Broker (`--broker`) | Endpoint & Format | Intraday Product | Delivery Product | F&O Product | Token Sync Mandatory | Broker API `.env` Variables (reference; live dispatch disabled) |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `angel_one` | `apiconnect.angelone.in/.../placeOrder` (`json`) | `BO` (`ROBO`) / `INTRADAY` | `DELIVERY` | `CARRYFORWARD` | Yes (`OpenAPIScripMaster.json`) | `ANGEL_API_KEY`, `ANGEL_CLIENT_CODE`, `ANGEL_MPIN`, `ANGEL_TOTP_SECRET` |
 | `zerodha` | `api.kite.trade/orders/regular` (`form`) | `MIS` | `CNC` | `NRML` | Recommended (`api.kite.trade/instruments`) | `ZERODHA_API_KEY`, `ZERODHA_ACCESS_TOKEN` |

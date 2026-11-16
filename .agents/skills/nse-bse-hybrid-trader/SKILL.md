@@ -6,7 +6,7 @@ description: >-
   stock or index (NIFTY, BANKNIFTY, FINNIFTY, SENSEX, or NSE/BSE tickers), evaluate
   intraday/swing setups (ORB, VWAP, RSI Divergence, Fibonacci), calculate exact INR
   position sizes with STT/GST/SEBI/stamp duty taxes, run Monte Carlo historical intraday
-  simulations, or stage paper/live orders across major Indian brokers (Zerodha Kite,
+  simulations, or stage paper orders across major Indian brokers (Zerodha Kite,
   Angel One SmartAPI, Upstox, Dhan, Fyers, Groww, Kotak Neo, ICICI Breeze, Shoonya).
 ---
 
@@ -15,7 +15,7 @@ description: >-
 A decoupled trading intelligence and execution skill for Indian equities and derivatives. The LLM performs
 probabilistic technical and market-structure reasoning (`nse-trading-skills` synthesis), while deterministic Python
 scripts enforce INR sizing, broker-accurate brokerage & Indian statutory tax math, 10,000-path Monte Carlo
-simulation, and multi-broker paper/live execution gating (`day-trader-skill` architecture).
+simulation, and multi-broker paper execution gating (live dispatch disabled) (`day-trader-skill` architecture).
 
 ## Supported Indian Brokers
 
@@ -131,7 +131,7 @@ python .agents/skills/nse-bse-hybrid-trader/scripts/indian_risk_gate.py --broker
   IST window lock, and circuit/ban checks.
 - **Never override a `BLOCK` verdict.**
 
-### Step 5: Multi-Broker Order Staging & Paper/Live Dispatch ([broker_bridge.py](./scripts/broker_bridge.py))
+### Step 5: Multi-Broker Order Staging & Paper Ledger ([broker_bridge.py](./scripts/broker_bridge.py))
 
 Only after Steps 3 and 4 return `PASS`:
 
@@ -150,9 +150,9 @@ Only after Steps 3 and 4 return `PASS`:
    python .agents/skills/nse-bse-hybrid-trader/scripts/broker_bridge.py stage --broker <BROKER> --symbol "<TICKER>" --segment <SEGMENT> --entry <ENTRY> --stop <STOP> --target <TARGET_1> --risk-json .agents/skills/nse-bse-hybrid-trader/state/risk_verdict.json --paper
    ```
 
-3. **Live Multi-Broker Dispatch (`--live`):** Requires open IST execution window, resolved token (for `angel_one`,
-   `upstox`, `dhan`, or any F&O contract), broker credentials in `.env` (check `brokers` subcommand), and explicit
-   confirmation passing `--live --confirm "CONFIRM LIVE"`.
+3. **Live Dispatch Is Disabled (`--live`):** This bundle is paper-only. `stage --live` always fails with
+   `LIVE_BLOCKED` and makes no network call. Never suggest `--live`; tell the user to place the order themselves on
+   their broker terminal using the paper payload as a reference.
    - [smartapi_bridge.py](./scripts/smartapi_bridge.py) remains a full backward-compatible alias defaulting to
      `angel_one`.
 4. **Post-Entry IST Bells, Price Alerts & Live Watch ([nse_alerts.py](./scripts/nse_alerts.py)):** After staging a

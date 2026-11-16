@@ -331,7 +331,7 @@ def run_all(
             f"--segment {segment} --entry {entry} --stop {stop} --target {target} --paper"
         )))
         safe_print("")
-        safe_print(ui.yellow("  (Replace --paper with --live --confirm \"CONFIRM LIVE\" only after manual verification)"))
+        safe_print(ui.yellow("  (Live dispatch is disabled in this bundle; place real orders on your broker terminal)"))
     else:
         safe_print(ui.dim("  >> No trade coordinates supplied. Staging command skipped."))
 

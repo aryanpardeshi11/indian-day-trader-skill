@@ -8,7 +8,7 @@
   .\trade.ps1 BANKBARODA
 
   # Full pipeline with trade coordinates
-  .\trade.ps1 HDFCBANK -Entry 1750 -Stop 1700 -Target 1850
+  .\trade.ps1 HDFCBANK -Entry 815 -Stop 790 -Target 865
 
   # Delivery trade with capital settings
   .\trade.ps1 RELIANCE -Entry 1335 -Stop 1300 -Target 1420 -Segment EQ_DELIVERY -Capital 100000
@@ -275,7 +275,7 @@ if (-not $hasCoords) {
     Write-Host "    --risk-json `"$RISK_JSON`" ``" -ForegroundColor White
     Write-Host "    --paper" -ForegroundColor White
     Write-Host ""
-    Write-Host "  WARNING: Replace --paper with --live --confirm ""CONFIRM LIVE"" for real money orders." -ForegroundColor Yellow
+    Write-Host "  NOTE: Live dispatch is disabled in this bundle (--live returns LIVE_BLOCKED)." -ForegroundColor Yellow
     Write-Host "  Always verify levels directly on your broker terminal before going live." -ForegroundColor Yellow
 }
 

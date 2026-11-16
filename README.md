@@ -15,7 +15,7 @@ brokers.
 > placed using this skill.
 >
 > **Review every line of code, every JSON tax/holiday schedule, and every broker payload before running or enabling
-> live execution.** Paper trading (`--paper`) is the default.
+> live execution.** This bundle is **paper-only**: `--paper` is the default and `--live` is rejected with `LIVE_BLOCKED`.
 
 ---
 
@@ -30,7 +30,7 @@ decouples the two:
 2. **Deterministic Python Scripts (`scripts/`)** run on Python 3.10+ standard library only (`0` required `pip`
    packages for the core engine) to fetch market bars, replay 10,000 bootstrapped intraday or swing sessions, compute
    exact INR position sizing after Indian statutory taxes and broker fees, enforce hard risk circuit breakers, and stage
-   orders into a local SQLite paper ledger (or explicitly confirmed live broker REST APIs).
+   orders into a local SQLite paper ledger with broker-native payload previews (live dispatch is disabled).
 
 ```text
                     ┌──────────────────────────────────────────────┐
@@ -125,13 +125,13 @@ $S = ".agents/skills/nse-bse-hybrid-trader/scripts"
 3. **Run 10,000-Path Monte Carlo Simulation:**
 
    ```bash
-   python $S/nse_timemachine.py --symbol HDFCBANK.NS --entry 1750 --stop 1700 --target 1850 --mode SWING
+   python $S/nse_timemachine.py --symbol HDFCBANK.NS --entry 815 --stop 790 --target 865 --mode SWING
    ```
 
 4. **Size Your Delivery Position with 2026 STT/GST:**
 
    ```bash
-   python $S/indian_risk_gate.py --symbol HDFCBANK --capital 100000 --risk-pct 1.5 --entry 1750 --stop 1700 --target 1850 --segment EQ_DELIVERY --broker zerodha
+   python $S/indian_risk_gate.py --symbol HDFCBANK --capital 100000 --risk-pct 1.5 --entry 815 --stop 790 --target 865 --segment EQ_DELIVERY --broker zerodha
    ```
 
 ### 🔴 Path C: Intraday & Scalping Traders (9:15 to 15:30 IST Session)
@@ -246,7 +246,7 @@ expectations, coin-flip setups, and hidden tax drag:
 
 - **No Mandatory Third-Party Runtime Dependencies:** Technical loading, indicator math, 10,000-run Monte Carlo
   simulations, Indian tax math, RFC-6238 TOTP generation, SQLite scrip-master caching, SQLite paper-trade accounting,
-  all 9 live broker REST dispatchers (`urllib.request` + HMAC-SHA1/SHA-256), and the terminal UI renderer (`nse_ui.py`)
+  broker-native order payload builders for all 9 brokers, and the terminal UI renderer (`nse_ui.py`)
   run using only Python's standard library.
 - **Beginner-Friendly Terminal Tables (`nse_ui.py`):** Running any script without `--json` renders colored Unicode
   tables (with automatic ASCII & Windows VT100 fallback, plus `NO_COLOR`/`FORCE_COLOR` support), progress bars, Indian
@@ -371,10 +371,10 @@ expectations, coin-flip setups, and hidden tax drag:
     `state/paper_trades.db`, validates SHA-256 risk fingerprints (rejecting tampered JSON or broker/symbol/segment/side/
     price/qty mismatches), settles exact tax-adjusted Net P&L on `close`, and supports filtering by `--date` or
     `--broker`.
-- **Gated Live Order Dispatch (`--live`):**
-  - Refuses execution unless: (1) market & intraday IST windows are open, (2) mandatory instrument tokens are synced or
-    supplied via `--symboltoken`, (3) local `.env` broker credentials are loaded, and (4) the exact phrase
-    `--confirm "CONFIRM LIVE"` is passed.
+- **Live Order Dispatch Disabled (`--live`):**
+  - Live broker dispatch is disabled in this bundle for regulatory and account safety. `stage --live` always fails with
+    `LIVE_BLOCKED` and makes no network call, regardless of `--confirm`, credentials or market hours. Use `--paper` to
+    preview the exact broker-native payload, then place the order yourself on your broker terminal.
   - `smartapi_bridge.py` provides a backward-compatible facade defaulting to `angel_one`.
 
 ### 6. Indian Universe & 2-Stage NSE Scanner (`nse_scanner.py`)
@@ -425,7 +425,7 @@ expectations, coin-flip setups, and hidden tax drag:
 
 Inspect live configs anytime with `python .agents/skills/nse-bse-hybrid-trader/scripts/broker_bridge.py brokers`:
 
-| Broker (`--broker`) | Equity Delivery | Equity Intraday | Futures | Options | DP Sell | Required `.env` Keys (`--live` only) |
+| Broker (`--broker`) | Equity Delivery | Equity Intraday | Futures | Options | DP Sell | Broker API `.env` Keys (reference only; live dispatch disabled) |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `angel_one` *(default)* | `min(Rs.20, 0.1%)`, min `Rs.5` | `min(Rs.20, 0.1%)`, min `Rs.5` | `Rs. 20` | `Rs. 20` | `Rs. 23.60` | `ANGEL_API_KEY`, `ANGEL_CLIENT_CODE`, `ANGEL_MPIN`, `ANGEL_TOTP_SECRET` |
 | `zerodha` (`kite`) | `Rs. 0` | `min(Rs.20, 0.03%)` | `min(Rs.20, 0.03%)` | `Rs. 20` | `Rs. 15.34` | `ZERODHA_API_KEY`, `ZERODHA_ACCESS_TOKEN` |
@@ -615,7 +615,7 @@ When testing `SBIN.NS` (`entry=850`, `stop=843`, `target=862`, `Rs. 50,000` capi
   charges), computes **`Rs. 57.40` charges at target** (`7.59%` tax drag), exposes **`Net R:R = 1.404 < 1.50`**, and
   returns **`BLOCK`** with a signed SHA-256 fingerprint so `broker_bridge.py` refuses to stage it.
 
-### Paper vs Live Broker Commands
+### Broker Commands (Paper Only)
 
 ```bash
 # List all 9 brokers, endpoints, brokerage profiles, and required .env vars
@@ -625,11 +625,11 @@ python .agents/skills/nse-bse-hybrid-trader/scripts/broker_bridge.py brokers
 python .agents/skills/nse-bse-hybrid-trader/scripts/broker_bridge.py sync-scrip --broker zerodha
 python .agents/skills/nse-bse-hybrid-trader/scripts/broker_bridge.py lookup --broker zerodha --symbol RELIANCE --exchange NSE
 
-# Live order (ONLY after reviewing every line of code, testing in paper, populating .env, and during open IST market)
+# Paper order with a verified risk verdict (--live is disabled and always returns LIVE_BLOCKED)
 python .agents/skills/nse-bse-hybrid-trader/scripts/broker_bridge.py stage \
   --broker zerodha --symbol RELIANCE --entry 1324 --stop 1310 --target 1352 \
   --risk-json .agents/skills/nse-bse-hybrid-trader/state/risk_verdict.json \
-  --live --confirm "CONFIRM LIVE"
+  --paper
 ```
 
 ---
@@ -699,8 +699,8 @@ capital, inspect every file yourself:
 - **Trade at Your Own Risk:** You are solely responsible for verifying every calculation, inspecting every script, and
   managing your capital. The author and contributors are not responsible for any losses or damages of any kind.
 - **Paper First:** `--paper` is the default and logs trades locally to `state/paper_trades.db` with zero broker calls
-  and zero demat account required. Enabling `--live` requires `--confirm "CONFIRM LIVE"`, an open IST window, synced
-  tokens where applicable, and your own `.env` credentials.
+  and zero demat account required. Live dispatch is disabled: `--live` is rejected with `LIVE_BLOCKED`, so place any
+  real order yourself on your broker terminal.
 - **Time Machine Is a Simulation, Not a Prediction:** Replays bootstrap from up to 60 trading days of 5-minute bars (or
   2 years of daily bars). Earnings, RBI announcements, corporate actions, halts, and macro shocks can cause moves those
   historical sessions never saw.
@@ -747,7 +747,7 @@ capital, inspect every file yourself:
 │       ├── nse_data_loader.py            # MTF indicators, VWAP, 15m ORB, Fib, divergence, --with-news & score
 │       ├── nse_timemachine.py            # 10,000-path Monte Carlo Time Machine & 15m ORB replay
 │       ├── indian_risk_gate.py           # INR sizing, 2026 taxes, circuit breakers & SHA-256 fingerprint
-│       ├── broker_bridge.py              # 9-broker ScripMaster SQLite cache, paper ledger & live REST
+│       ├── broker_bridge.py              # 9-broker ScripMaster SQLite cache, paper ledger & payload previews
 │       └── smartapi_bridge.py            # Backward-compatible Angel One facade
 ├── .claude-plugin/
 │   ├── marketplace.json                  # Claude Code plugin marketplace manifest
